@@ -47,7 +47,20 @@ No external frameworks, zero third-party telemetry, and 100% local in-browser pr
 
 ---
 
-## 📥 Panduan Instalasi (Load Unpacked)
+## 📱 Versi Android APK — Cookie Browser Mobile
+
+Tersedia aplikasi Android mandiri bernama **Cookie Browser** yang mengintegrasikan browser web lengkap (WebView) dengan fitur inspeksi cookie melayang (**Floating Cookie Inspector 🍪**):
+- **Full Mobile Web Browser**: Address bar dengan search engine integration, SSL lock badge, Back/Forward, Refresh, Desktop Mode.
+- **Live Cookie Sheet**: Tap ikon 🍪 untuk langsung menginspeksi cookie aktif situs yang sedang dibuka secara real-time.
+- **CRUD & Masking**: Tambah, ubah nilai, hapus cookie, dan sensor nilai token sensitif.
+- **Cloudflare Sync**: 1-klik push/pull backup cookie langsung ke `warnet.web.id/api/_extension_/cookies`.
+- **Direct Download**:
+  - `https://warnet.web.id/downloads/CookieBrowser-v1.0.0.apk` (48 MB)
+  - `https://warnet.web.id/apk/cookie-browser.apk`
+
+---
+
+## 📥 Panduan Instalasi Ekstensi Chrome (Load Unpacked)
 
 1. Buka browser Google Chrome (versi 102 atau yang lebih baru).
 2. Kunjungi halaman ekstensi Chrome dengan mengetik `chrome://extensions/` di address bar.
