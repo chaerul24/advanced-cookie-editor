@@ -5,6 +5,8 @@ import '../models/cookie_item.dart';
 import '../services/cookie_manager_service.dart';
 import 'add_edit_cookie_dialog.dart';
 import 'cloud_sync_dialog.dart';
+import 'export_dialog.dart';
+import 'import_dialog.dart';
 
 class CookieEditorSheet extends StatefulWidget {
   final String activeUrl;
@@ -142,75 +144,26 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
     );
   }
 
-  void _exportJson() {
-    final payload = {
-      'format': 'advanced-cookie-editor',
-      'version': 1,
-      'exportedAt': DateTime.now().toUtc().toIso8601String(),
-      'itemCount': _allCookies.length,
-      'domain': widget.activeDomain,
-      'cookies': _allCookies.map((c) => c.toJson()).toList(),
-    };
-    final jsonStr = const JsonEncoder.withIndent('  ').convert(payload);
-    Clipboard.setData(ClipboardData(text: jsonStr));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied ${_allCookies.length} cookies as JSON to clipboard!')),
+  void _openExportDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => ExportDialog(
+        allCookies: _allCookies,
+        activeDomain: widget.activeDomain,
+      ),
     );
   }
 
-  void _importJsonPrompt() {
-    final textController = TextEditingController();
+  void _openImportDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Paste Cookie JSON'),
-        content: TextField(
-          controller: textController,
-          maxLines: 8,
-          decoration: const InputDecoration(
-            hintText: 'Paste cookie JSON array or schema v1...',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              final raw = textController.text.trim();
-              if (raw.isEmpty) return;
-              try {
-                final dynamic data = json.decode(raw);
-                List<dynamic> list = [];
-                if (data is List) {
-                  list = data;
-                } else if (data is Map && data['cookies'] is List) {
-                  list = data['cookies'] as List;
-                }
-                int count = 0;
-                for (var item in list) {
-                  if (item is Map<String, dynamic>) {
-                    final c = CookieItem.fromJson(item);
-                    await CookieManagerService.setCookie(widget.activeUrl, c);
-                    count++;
-                  }
-                }
-                Navigator.of(ctx).pop();
-                widget.onCookiesChanged();
-                await _loadCookies();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Imported $count cookies successfully!')),
-                  );
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Invalid JSON format: $e')),
-                );
-              }
-            },
-            child: const Text('Import'),
-          ),
-        ],
+      builder: (ctx) => ImportDialog(
+        activeUrl: widget.activeUrl,
+        activeDomain: widget.activeDomain,
+        onImportCompleted: () async {
+          widget.onCookiesChanged();
+          await _loadCookies();
+        },
       ),
     );
   }
@@ -298,15 +251,17 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
-                  onPressed: _exportJson,
-                  icon: const Icon(Icons.copy, size: 16, color: Colors.white70),
-                  label: const Text('Copy JSON', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  onPressed: _openExportDialog,
+                  icon: const Icon(Icons.file_download, size: 16, color: Colors.greenAccent),
+                  label: const Text('Export', style: TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.greenAccent)),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
-                  onPressed: _importJsonPrompt,
-                  icon: const Icon(Icons.file_upload, size: 16, color: Colors.white70),
-                  label: const Text('Import JSON', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  onPressed: _openImportDialog,
+                  icon: const Icon(Icons.file_upload, size: 16, color: Colors.orangeAccent),
+                  label: const Text('Import (2 Cara)', style: TextStyle(color: Colors.orangeAccent, fontSize: 12)),
+                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.orangeAccent)),
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(

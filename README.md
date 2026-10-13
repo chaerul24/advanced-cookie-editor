@@ -53,10 +53,19 @@ Tersedia aplikasi Android mandiri bernama **Cookie Browser** yang mengintegrasik
 - **Full Mobile Web Browser**: Address bar dengan search engine integration, SSL lock badge, Back/Forward, Refresh, Desktop Mode.
 - **Live Cookie Sheet**: Tap ikon 🍪 untuk langsung menginspeksi cookie aktif situs yang sedang dibuka secara real-time.
 - **CRUD & Masking**: Tambah, ubah nilai, hapus cookie, dan sensor nilai token sensitif.
+- **Import (2 Cara)**:
+  1. **Pilih File**: Import berkas `.json` atau file terenkripsi `.enc.json` langsung dari penyimpanan lokal HP.
+  2. **Paste JSON**: Tempel teks JSON cookie langsung ke textarea dengan dukungan deteksi otomatis enkripsi.
+  - Opsi strategi import: **Merge** (gabungkan) atau **Replace** (timpa semua).
+- **Export (2 Opsi)**:
+  1. **Simpan / Share File**: Buat file `.json` atau `.enc.json` dan bagikan langsung lewat Android Share Sheet / File Manager.
+  2. **Salin JSON**: Salin langsung format teks JSON ke clipboard.
+  - Opsi enkripsi militer: **AES-GCM 256-bit** dengan proteksi password (PBKDF2).
 - **Cloudflare Sync**: 1-klik push/pull backup cookie langsung ke `warnet.web.id/api/_extension_/cookies`.
 - **Direct Download**:
-  - `https://warnet.web.id/downloads/CookieBrowser-v1.0.0.apk` (48 MB)
+  - `https://warnet.web.id/downloads/CookieBrowser-v1.0.0.apk`
   - `https://warnet.web.id/apk/cookie-browser.apk`
+  - Web Portal: `https://warnet.web.id/media/download`
 
 ---
 
