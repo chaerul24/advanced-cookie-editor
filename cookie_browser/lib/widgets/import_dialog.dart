@@ -10,12 +10,18 @@ class ImportDialog extends StatefulWidget {
   final String activeUrl;
   final String activeDomain;
   final VoidCallback onImportCompleted;
+  final int initialTabIndex;
+  final PlatformFile? initialFile;
+  final String? initialContent;
 
   const ImportDialog({
     super.key,
     required this.activeUrl,
     required this.activeDomain,
     required this.onImportCompleted,
+    this.initialTabIndex = 0,
+    this.initialFile,
+    this.initialContent,
   });
 
   @override
@@ -44,7 +50,16 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 1),
+    );
+    if (widget.initialFile != null && widget.initialContent != null) {
+      _selectedFile = widget.initialFile;
+      _fileContent = widget.initialContent;
+      _fileIsEncrypted = widget.initialContent!.contains('advanced-cookie-editor-encrypted');
+    }
     _jsonTextController.addListener(_checkTextEncryption);
   }
 
@@ -69,18 +84,25 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
     setState(() => _errorMessage = null);
     try {
       final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
+        type: FileType.any, // Memungkinkan memilih semua file backup (.json, .enc.json, .txt) dari device tanpa diblokir SAF
         withData: true,
       );
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         String content = '';
-        if (file.bytes != null) {
+        if (file.bytes != null && file.bytes!.isNotEmpty) {
           content = utf8.decode(file.bytes!);
-        } else if (file.path != null) {
-          content = await File(file.path!).readAsString();
+        } else if (file.path != null && file.path!.isNotEmpty) {
+          final f = File(file.path!);
+          if (await f.exists()) {
+            content = await f.readAsString();
+          }
+        }
+
+        if (content.trim().isEmpty) {
+          setState(() => _errorMessage = 'File "${file.name}" kosong atau tidak terbaca dari perangkat.');
+          return;
         }
 
         final isEnc = content.contains('advanced-cookie-editor-encrypted');
@@ -88,10 +110,11 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
           _selectedFile = file;
           _fileContent = content;
           _fileIsEncrypted = isEnc;
+          _errorMessage = null;
         });
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Gagal membaca file: $e');
+      setState(() => _errorMessage = 'Gagal mengambil file dari device: $e');
     }
   }
 
@@ -281,38 +304,46 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
                           onTap: _pickFile,
                           borderRadius: BorderRadius.circular(12),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                             decoration: BoxDecoration(
                               color: const Color(0xFF2A2A34),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: _selectedFile != null ? Colors.amber : Colors.white24,
+                                color: _selectedFile != null ? Colors.amber : Colors.orangeAccent.withOpacity(0.5),
                                 width: _selectedFile != null ? 1.5 : 1,
                               ),
                             ),
                             child: Column(
                               children: [
                                 Icon(
-                                  _selectedFile != null ? Icons.check_circle : Icons.upload_file,
-                                  color: _selectedFile != null ? Colors.amber : Colors.grey,
-                                  size: 36,
+                                  _selectedFile != null ? Icons.check_circle : Icons.folder_open,
+                                  color: _selectedFile != null ? Colors.amber : Colors.orangeAccent,
+                                  size: 38,
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 10),
                                 Text(
                                   _selectedFile != null
                                       ? '${_selectedFile!.name} (${(_selectedFile!.size / 1024).toStringAsFixed(1)} KB)'
-                                      : 'Tap untuk pilih file (.json / .enc.json)',
+                                      : '📁 PILIH / AMBIL FILE DARI DEVICE',
                                   style: TextStyle(
-                                    color: _selectedFile != null ? Colors.white : Colors.white70,
-                                    fontSize: 12,
-                                    fontWeight: _selectedFile != null ? FontWeight.bold : FontWeight.normal,
+                                    color: _selectedFile != null ? Colors.white : Colors.orangeAccent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
                                   ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _selectedFile != null
+                                      ? 'Tap untuk mengganti file yang dipilih'
+                                      : 'Buka penyimpanan HP (Folder Download / Documents / dsb)',
+                                  style: const TextStyle(color: Colors.grey, fontSize: 11),
                                   textAlign: TextAlign.center,
                                 ),
                                 if (_fileIsEncrypted)
                                   const Padding(
-                                    padding: EdgeInsets.only(top: 6),
-                                    child: Text('🔒 Terenkripsi AES-GCM', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: Text('🔒 File Terenkripsi AES-GCM (Wajib Password)', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
                                   ),
                               ],
                             ),

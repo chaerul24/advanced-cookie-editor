@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/cookie_item.dart';
 import '../services/cookie_manager_service.dart';
 import 'add_edit_cookie_dialog.dart';
@@ -154,12 +156,73 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
     );
   }
 
-  void _openImportDialog() {
+  Future<void> _pickAndImportFile() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.any, // Memilih berkas dari device tanpa filter SAF yang memblokir .json
+        withData: true,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.first;
+        String content = '';
+        if (file.bytes != null && file.bytes!.isNotEmpty) {
+          content = utf8.decode(file.bytes!);
+        } else if (file.path != null && file.path!.isNotEmpty) {
+          final f = File(file.path!);
+          if (await f.exists()) {
+            content = await f.readAsString();
+          }
+        }
+
+        if (content.trim().isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: Colors.red.shade800,
+                content: Text('File "${file.name}" kosong atau tidak terbaca dari perangkat.'),
+              ),
+            );
+          }
+          return;
+        }
+
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => ImportDialog(
+              activeUrl: widget.activeUrl,
+              activeDomain: widget.activeDomain,
+              initialTabIndex: 0,
+              initialFile: file,
+              initialContent: content,
+              onImportCompleted: () async {
+                widget.onCookiesChanged();
+                await _loadCookies();
+              },
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade800,
+            content: Text('Gagal mengambil file dari device: $e'),
+          ),
+        );
+      }
+    }
+  }
+
+  void _openPasteJsonDialog() {
     showDialog(
       context: context,
       builder: (ctx) => ImportDialog(
         activeUrl: widget.activeUrl,
         activeDomain: widget.activeDomain,
+        initialTabIndex: 1,
         onImportCompleted: () async {
           widget.onCookiesChanged();
           await _loadCookies();
@@ -167,6 +230,7 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
       ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -225,49 +289,93 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
             ),
           ),
 
-          // Action Pills Row
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          // Action Buttons (2 Rows, Highly Visible & Accessible)
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Row(
+            child: Column(
               children: [
-                ElevatedButton.icon(
-                  onPressed: () => _showAddEditDialog(),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Add Cookie'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber.shade700,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
+                // Row 1: Direct primary actions
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showAddEditDialog(),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Add Cookie'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.amber.shade700,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 5,
+                      child: ElevatedButton.icon(
+                        onPressed: _pickAndImportFile,
+                        icon: const Icon(Icons.folder_open, size: 16),
+                        label: const Text('Import File (HP)'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade800,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 4,
+                      child: OutlinedButton.icon(
+                        onPressed: _openPasteJsonDialog,
+                        icon: const Icon(Icons.paste, size: 14, color: Colors.orangeAccent),
+                        label: const Text('Paste JSON', style: TextStyle(color: Colors.orangeAccent, fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.orangeAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _openCloudSync,
-                  icon: const Icon(Icons.cloud_sync, size: 16, color: Colors.blueAccent),
-                  label: const Text('warnet.web.id', style: TextStyle(color: Colors.blueAccent, fontSize: 12)),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.blueAccent)),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _openExportDialog,
-                  icon: const Icon(Icons.file_download, size: 16, color: Colors.greenAccent),
-                  label: const Text('Export', style: TextStyle(color: Colors.greenAccent, fontSize: 12)),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.greenAccent)),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _openImportDialog,
-                  icon: const Icon(Icons.file_upload, size: 16, color: Colors.orangeAccent),
-                  label: const Text('Import (2 Cara)', style: TextStyle(color: Colors.orangeAccent, fontSize: 12)),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.orangeAccent)),
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => setState(() => _maskValues = !_maskValues),
-                  icon: Icon(_maskValues ? Icons.visibility : Icons.visibility_off, size: 16, color: Colors.grey),
-                  label: Text(_maskValues ? 'Masked' : 'Visible', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                const SizedBox(height: 6),
+                // Row 2: Secondary actions
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _openExportDialog,
+                        icon: const Icon(Icons.file_download, size: 14, color: Colors.greenAccent),
+                        label: const Text('Export', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.greenAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _openCloudSync,
+                        icon: const Icon(Icons.cloud_sync, size: 14, color: Colors.blueAccent),
+                        label: const Text('Cloud Sync', style: TextStyle(color: Colors.blueAccent, fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.blueAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () => setState(() => _maskValues = !_maskValues),
+                      icon: Icon(_maskValues ? Icons.visibility : Icons.visibility_off, size: 14, color: Colors.grey),
+                      label: Text(_maskValues ? 'Masked' : 'Visible', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6)),
+                    ),
+                  ],
                 ),
               ],
             ),
