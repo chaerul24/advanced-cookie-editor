@@ -30,6 +30,17 @@ class MainActivity: FlutterActivity() {
                     val cookie = call.argument<String>("cookie")
                     if (url != null && cookie != null) {
                         cookieManager.setCookie(url, cookie)
+
+                        // If cookie contains domain attribute, also set on that domain url specifically
+                        val domainRegex = Regex("domain=([^;\\s]+)", RegexOption.IGNORE_CASE)
+                        val match = domainRegex.find(cookie)
+                        if (match != null) {
+                            val rawDomain = match.groupValues[1].trimStart('.')
+                            if (rawDomain.isNotEmpty()) {
+                                cookieManager.setCookie("https://$rawDomain/", cookie)
+                                cookieManager.setCookie("http://$rawDomain/", cookie)
+                            }
+                        }
                         cookieManager.flush()
                         result.success(true)
                     } else {
@@ -45,6 +56,10 @@ class MainActivity: FlutterActivity() {
                         val domStr = if (!domain.isNullOrEmpty()) "; domain=$domain" else ""
                         val expired = "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; path=$path$domStr"
                         cookieManager.setCookie(url, expired)
+                        if (!domain.isNullOrEmpty()) {
+                            val cleanDomain = domain.trimStart('.')
+                            cookieManager.setCookie("https://$cleanDomain$path", expired)
+                        }
                         cookieManager.flush()
                         result.success(true)
                     } else {
@@ -56,6 +71,10 @@ class MainActivity: FlutterActivity() {
                         cookieManager.flush()
                         result.success(success)
                     }
+                }
+                "flushCookies" -> {
+                    cookieManager.flush()
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }

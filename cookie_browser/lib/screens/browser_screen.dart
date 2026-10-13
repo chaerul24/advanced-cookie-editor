@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../models/cookie_item.dart';
 import '../services/cookie_manager_service.dart';
 import '../widgets/cookie_editor_sheet.dart';
@@ -46,8 +47,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
             await _fetchCookieCount();
           },
         ),
-      )
-      ..loadRequest(Uri.parse(_currentUrl));
+      );
+
+    if (_controller.platform is AndroidWebViewController) {
+      final androidController = _controller.platform as AndroidWebViewController;
+      AndroidWebViewController.enableDebugging(true);
+      androidController.setMediaPlaybackRequiresUserGesture(false);
+      final cookiePlatform = WebViewCookieManager().platform;
+      if (cookiePlatform is AndroidWebViewCookieManager) {
+        cookiePlatform.setAcceptThirdPartyCookies(androidController, true);
+      }
+    }
+
+    _controller.loadRequest(Uri.parse(_currentUrl));
   }
 
   void _onUrlChanged(String url) {
@@ -108,8 +120,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       builder: (ctx) => CookieEditorSheet(
         activeUrl: _currentUrl,
         activeDomain: _getActiveDomain(),
-        onCookiesChanged: () {
-          _fetchCookieCount();
+        onCookiesChanged: () async {
+          await _fetchCookieCount();
+          _controller.reload();
         },
       ),
     );

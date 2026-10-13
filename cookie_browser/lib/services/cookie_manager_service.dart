@@ -47,8 +47,18 @@ class CookieManagerService {
   /// Add or update a cookie
   static Future<bool> setCookie(String url, CookieItem cookie) async {
     try {
+      // Determine the best target URL based on the cookie's domain:
+      String targetUrl = url;
+      if (cookie.domain.isNotEmpty) {
+        final cleanDomain = cookie.domain.replaceFirst(RegExp(r'^\.+'), '').trim();
+        if (cleanDomain.isNotEmpty) {
+          final scheme = cookie.secure ? 'https://' : 'http://';
+          targetUrl = '$scheme$cleanDomain${cookie.path.isNotEmpty ? cookie.path : '/'}';
+        }
+      }
+
       final res = await _channel.invokeMethod<bool>('setCookie', {
-        'url': url,
+        'url': targetUrl,
         'cookie': cookie.toSetCookieString(),
       });
       return res ?? false;
@@ -60,8 +70,17 @@ class CookieManagerService {
   /// Remove a specific cookie
   static Future<bool> removeCookie(String url, CookieItem cookie) async {
     try {
+      String targetUrl = url;
+      if (cookie.domain.isNotEmpty) {
+        final cleanDomain = cookie.domain.replaceFirst(RegExp(r'^\.+'), '').trim();
+        if (cleanDomain.isNotEmpty) {
+          final scheme = cookie.secure ? 'https://' : 'http://';
+          targetUrl = '$scheme$cleanDomain${cookie.path.isNotEmpty ? cookie.path : '/'}';
+        }
+      }
+
       final res = await _channel.invokeMethod<bool>('removeCookie', {
-        'url': url,
+        'url': targetUrl,
         'name': cookie.name,
         'domain': cookie.domain,
         'path': cookie.path,
@@ -70,6 +89,13 @@ class CookieManagerService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Flush cookies from memory buffer to persistent disk storage
+  static Future<void> flush() async {
+    try {
+      await _channel.invokeMethod<bool>('flushCookies');
+    } catch (_) {}
   }
 
   /// Clear all stored cookies

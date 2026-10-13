@@ -58,16 +58,24 @@ class CookieItem {
     if (domain.isNotEmpty) parts.add('domain=$domain');
     if (path.isNotEmpty) parts.add('path=$path');
     if (expirationDate != null && !session) {
-      final date = DateTime.fromMillisecondsSinceEpoch(expirationDate! * 1000, isUtc: true);
-      // Format: Wdy, DD-Mon-YYYY HH:MM:SS GMT
-      parts.add('Expires=${date.toUtc().toIso8601String()}');
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final maxAge = expirationDate! - nowSec;
+      if (maxAge > 0) {
+        parts.add('Max-Age=$maxAge');
+      }
     }
     if (secure) parts.add('Secure');
     if (httpOnly) parts.add('HttpOnly');
     if (sameSite.isNotEmpty && sameSite != 'unspecified') {
-      if (sameSite == 'no_restriction') parts.add('SameSite=None');
-      if (sameSite == 'lax') parts.add('SameSite=Lax');
-      if (sameSite == 'strict') parts.add('SameSite=Strict');
+      if (sameSite == 'no_restriction') {
+        parts.add('SameSite=None');
+        // Modern Chromium enforces Secure when SameSite=None
+        if (!secure) parts.add('Secure');
+      } else if (sameSite == 'lax') {
+        parts.add('SameSite=Lax');
+      } else if (sameSite == 'strict') {
+        parts.add('SameSite=Strict');
+      }
     }
     return parts.join('; ');
   }

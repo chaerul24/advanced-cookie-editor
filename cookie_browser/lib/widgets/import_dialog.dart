@@ -214,6 +214,9 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
         }
       }
 
+      // Flush all imported cookies to disk storage immediately
+      await CookieManagerService.flush();
+
       widget.onImportCompleted();
 
       if (mounted) {
