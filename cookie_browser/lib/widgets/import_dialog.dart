@@ -42,7 +42,8 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
   bool _textIsEncrypted = false;
   final TextEditingController _textPasswordController = TextEditingController();
 
-  // Strategy & Status
+  // UI state
+  bool _obscurePassword = true;
   String _strategy = 'merge'; // 'merge' or 'replace'
   bool _isLoading = false;
   String? _errorMessage;
@@ -58,7 +59,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
     if (widget.initialFile != null && widget.initialContent != null) {
       _selectedFile = widget.initialFile;
       _fileContent = widget.initialContent;
-      _fileIsEncrypted = widget.initialContent!.contains('advanced-cookie-editor-encrypted');
+      _fileIsEncrypted = _detectEncryption(widget.initialContent!);
     }
     _jsonTextController.addListener(_checkTextEncryption);
   }
@@ -72,9 +73,22 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
     super.dispose();
   }
 
+  bool _detectEncryption(String content) {
+    if (content.contains('advanced-cookie-editor-encrypted')) return true;
+    try {
+      final decoded = json.decode(content);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded.containsKey('ciphertext') && decoded.containsKey('salt') && decoded.containsKey('iv')) {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
   void _checkTextEncryption() {
     final text = _jsonTextController.text.trim();
-    final encrypted = text.contains('advanced-cookie-editor-encrypted');
+    final encrypted = _detectEncryption(text);
     if (encrypted != _textIsEncrypted) {
       setState(() => _textIsEncrypted = encrypted);
     }
@@ -84,7 +98,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
     setState(() => _errorMessage = null);
     try {
       final result = await FilePicker.pickFiles(
-        type: FileType.any, // Memungkinkan memilih semua file backup (.json, .enc.json, .txt) dari device tanpa diblokir SAF
+        type: FileType.any, // Memilih berkas dari device tanpa filter SAF yang memblokir .json
         withData: true,
       );
 
@@ -105,7 +119,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
           return;
         }
 
-        final isEnc = content.contains('advanced-cookie-editor-encrypted');
+        final isEnc = _detectEncryption(content);
         setState(() {
           _selectedFile = file;
           _fileContent = content;
@@ -132,7 +146,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
     if (isFileTab) {
       if (_fileContent == null || _fileContent!.isEmpty) {
         setState(() {
-          _errorMessage = 'Silakan pilih file JSON terlebih dahulu.';
+          _errorMessage = 'Silakan pilih/upload berkas terlebih dahulu.';
           _isLoading = false;
         });
         return;
@@ -157,11 +171,15 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
       dynamic parsedData;
       if (isEnc) {
         if (password.isEmpty) {
-          throw Exception('File/teks ini terenkripsi. Masukkan password dekripsi.');
+          throw Exception('Berkas ini terenkripsi. Silakan masukkan password dekripsi.');
         }
         final envelope = json.decode(rawJson) as Map<String, dynamic>;
-        final decryptedText = CryptoService.decryptPayload(envelope, password);
-        parsedData = json.decode(decryptedText);
+        try {
+          final decryptedText = CryptoService.decryptPayload(envelope, password);
+          parsedData = json.decode(decryptedText);
+        } catch (_) {
+          throw Exception('Password salah! Gagal membuka file terenkripsi.');
+        }
       } else {
         parsedData = json.decode(rawJson);
       }
@@ -235,7 +253,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'Import Cookies (2 Cara)',
+                    'Import Cookies',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                 ),
@@ -262,7 +280,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
                 unselectedLabelColor: Colors.grey,
                 indicatorSize: TabBarIndicatorSize.tab,
                 tabs: const [
-                  Tab(icon: Icon(Icons.folder_open, size: 18), text: '1. Pilih File'),
+                  Tab(icon: Icon(Icons.upload_file, size: 18), text: '1. Upload File'),
                   Tab(icon: Icon(Icons.paste, size: 18), text: '2. Paste JSON'),
                 ],
               ),
@@ -291,11 +309,11 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
 
             // Tabs Content
             SizedBox(
-              height: 190,
+              height: 260,
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  // TAB 1: PICK FILE
+                  // TAB 1: UPLOAD FILE & PASSWORD
                   SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -304,61 +322,120 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
                           onTap: _pickFile,
                           borderRadius: BorderRadius.circular(12),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
                             decoration: BoxDecoration(
                               color: const Color(0xFF2A2A34),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: _selectedFile != null ? Colors.amber : Colors.orangeAccent.withOpacity(0.5),
+                                color: _selectedFile != null ? Colors.amber : Colors.orangeAccent.withOpacity(0.6),
                                 width: _selectedFile != null ? 1.5 : 1,
                               ),
                             ),
-                            child: Column(
+                            child: Row(
                               children: [
-                                Icon(
-                                  _selectedFile != null ? Icons.check_circle : Icons.folder_open,
-                                  color: _selectedFile != null ? Colors.amber : Colors.orangeAccent,
-                                  size: 38,
-                                ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  _selectedFile != null
-                                      ? '${_selectedFile!.name} (${(_selectedFile!.size / 1024).toStringAsFixed(1)} KB)'
-                                      : '📁 PILIH / AMBIL FILE DARI DEVICE',
-                                  style: TextStyle(
-                                    color: _selectedFile != null ? Colors.white : Colors.orangeAccent,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: _selectedFile != null ? Colors.amber.withOpacity(0.2) : Colors.orangeAccent.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _selectedFile != null
-                                      ? 'Tap untuk mengganti file yang dipilih'
-                                      : 'Buka penyimpanan HP (Folder Download / Documents / dsb)',
-                                  style: const TextStyle(color: Colors.grey, fontSize: 11),
-                                  textAlign: TextAlign.center,
-                                ),
-                                if (_fileIsEncrypted)
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 8),
-                                    child: Text('🔒 File Terenkripsi AES-GCM (Wajib Password)', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  child: Icon(
+                                    _selectedFile != null ? Icons.file_present : Icons.upload_file,
+                                    color: _selectedFile != null ? Colors.amber : Colors.orangeAccent,
+                                    size: 28,
                                   ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _selectedFile != null ? _selectedFile!.name : 'PILIH / UPLOAD BERKAS',
+                                        style: TextStyle(
+                                          color: _selectedFile != null ? Colors.white : Colors.orangeAccent,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        _selectedFile != null
+                                            ? '${(_selectedFile!.size / 1024).toStringAsFixed(1)} KB — Tap untuk ganti'
+                                            : 'Ambil berkas .json / .enc.json dari device',
+                                        style: const TextStyle(color: Colors.grey, fontSize: 11),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade600),
                               ],
                             ),
                           ),
                         ),
+                        const SizedBox(height: 12),
+
+                        // Switch / Indicator jika ada password
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _fileIsEncrypted ? Colors.amber.withOpacity(0.12) : const Color(0xFF24242C),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _fileIsEncrypted ? Colors.amber.withOpacity(0.5) : Colors.white12,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _fileIsEncrypted ? Icons.lock : Icons.lock_open,
+                                size: 16,
+                                color: _fileIsEncrypted ? Colors.amber : Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _fileIsEncrypted
+                                      ? 'File Terenkripsi (Memerlukan Password)'
+                                      : 'File ini menggunakan password?',
+                                  style: TextStyle(
+                                    color: _fileIsEncrypted ? Colors.amber : Colors.white70,
+                                    fontSize: 11,
+                                    fontWeight: _fileIsEncrypted ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                              Switch(
+                                value: _fileIsEncrypted,
+                                activeColor: Colors.amber,
+                                onChanged: (val) => setState(() => _fileIsEncrypted = val),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Input Password jika file memiliki password
                         if (_fileIsEncrypted) ...[
                           const SizedBox(height: 10),
                           TextField(
                             controller: _filePasswordController,
-                            obscureText: true,
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                            decoration: const InputDecoration(
+                            obscureText: _obscurePassword,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            decoration: InputDecoration(
                               labelText: 'Password Dekripsi *',
+                              labelStyle: const TextStyle(color: Colors.amberAccent, fontSize: 12),
+                              hintText: 'Ketik password backup di sini...',
+                              hintStyle: const TextStyle(color: Colors.grey, fontSize: 11),
+                              prefixIcon: const Icon(Icons.password, size: 18, color: Colors.amberAccent),
+                              suffixIcon: IconButton(
+                                icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off, size: 18, color: Colors.grey),
+                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                              ),
                               isDense: true,
-                              border: OutlineInputBorder(),
+                              border: const OutlineInputBorder(),
+                              focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.amberAccent)),
                             ),
                           ),
                         ],
@@ -373,7 +450,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
                       children: [
                         TextField(
                           controller: _jsonTextController,
-                          maxLines: 5,
+                          maxLines: 4,
                           style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'monospace'),
                           decoration: const InputDecoration(
                             hintText: 'Paste cookie JSON di sini (array [{name:...}] atau schema v1)...',
@@ -382,16 +459,47 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
                             border: OutlineInputBorder(),
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              _textIsEncrypted ? Icons.lock : Icons.lock_open,
+                              size: 16,
+                              color: _textIsEncrypted ? Colors.amber : Colors.grey,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _textIsEncrypted ? 'Teks terenkripsi terdeteksi' : 'Gunakan password dekripsi?',
+                                style: TextStyle(
+                                  color: _textIsEncrypted ? Colors.amber : Colors.grey,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                            Switch(
+                              value: _textIsEncrypted,
+                              activeColor: Colors.amber,
+                              onChanged: (val) => setState(() => _textIsEncrypted = val),
+                            ),
+                          ],
+                        ),
                         if (_textIsEncrypted) ...[
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           TextField(
                             controller: _textPasswordController,
-                            obscureText: true,
+                            obscureText: _obscurePassword,
                             style: const TextStyle(color: Colors.white, fontSize: 12),
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Password Dekripsi AES-GCM *',
+                              labelStyle: const TextStyle(color: Colors.amberAccent, fontSize: 12),
+                              prefixIcon: const Icon(Icons.password, size: 18, color: Colors.amberAccent),
+                              suffixIcon: IconButton(
+                                icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off, size: 18, color: Colors.grey),
+                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                              ),
                               isDense: true,
-                              border: OutlineInputBorder(),
+                              border: const OutlineInputBorder(),
                             ),
                           ),
                         ],

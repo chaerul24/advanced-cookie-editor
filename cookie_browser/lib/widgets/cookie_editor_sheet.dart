@@ -203,6 +203,22 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
             ),
           );
         }
+      } else {
+        // If user cancelled file picker, open dialog directly
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => ImportDialog(
+              activeUrl: widget.activeUrl,
+              activeDomain: widget.activeDomain,
+              initialTabIndex: 0,
+              onImportCompleted: () async {
+                widget.onCookiesChanged();
+                await _loadCookies();
+              },
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -230,7 +246,6 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -316,8 +331,8 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
                       flex: 5,
                       child: ElevatedButton.icon(
                         onPressed: _pickAndImportFile,
-                        icon: const Icon(Icons.folder_open, size: 16),
-                        label: const Text('Import File (HP)'),
+                        icon: const Icon(Icons.upload_file, size: 16),
+                        label: const Text('Upload File'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.orange.shade800,
                           foregroundColor: Colors.white,
