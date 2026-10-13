@@ -68,7 +68,7 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
   Future<void> _pickFile() async {
     setState(() => _errorMessage = null);
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
         withData: true,
