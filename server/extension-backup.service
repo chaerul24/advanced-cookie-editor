@@ -1,0 +1,15 @@
+[Unit]
+Description=Warnet Cookie Extension Backup Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/extension-backup
+ExecStart=/usr/bin/node /root/extension-backup/server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

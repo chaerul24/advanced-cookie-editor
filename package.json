@@ -1,0 +1,20 @@
+{
+  "name": "advanced-cookie-editor",
+  "version": "1.0.0",
+  "description": "Professional Chrome Extension MV3 for inspecting, editing, creating, exporting, and managing cookies securely with AES-GCM encryption.",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/test-runner.js",
+    "generate-icons": "node icons/generate-icons.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "cookies",
+    "cookie-editor",
+    "security",
+    "aes-gcm",
+    "manifest-v3"
+  ],
+  "author": "Advanced Cookie Editor Project",
+  "license": "MIT"
+}
