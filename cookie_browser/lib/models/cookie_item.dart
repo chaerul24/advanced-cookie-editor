@@ -29,32 +29,54 @@ class CookieItem {
       'name': name,
       'value': value,
       'domain': domain,
+      'hostOnly': !domain.startsWith('.'),
       'path': path,
       'secure': secure,
       'httpOnly': httpOnly,
+      'sameSite': sameSite,
       'session': session,
       if (expirationDate != null) 'expirationDate': expirationDate,
-      'sameSite': sameSite,
     };
   }
 
   factory CookieItem.fromJson(Map<String, dynamic> json) {
-    final expNum = json['expirationDate'];
-    final exp = expNum != null ? (expNum as num).toInt() : null;
+    int? exp;
+    if (json['expirationDate'] != null) {
+      final num val = json['expirationDate'] as num;
+      if (val > 100000000000) {
+        exp = (val ~/ 1000).toInt();
+      } else {
+        exp = val.toInt();
+      }
+    }
+
     final sessionVal = json['session'];
-    // If session is explicitly given as boolean, use it. Otherwise, if expirationDate exists, it's not a session cookie.
     final bool isSession = sessionVal is bool ? sessionVal : (exp == null);
+
+    String sameSiteRaw = (json['sameSite']?.toString() ?? 'lax').toLowerCase().trim();
+    if (sameSiteRaw == 'none' || sameSiteRaw == 'no_restriction') {
+      sameSiteRaw = 'no_restriction';
+    } else if (sameSiteRaw == 'strict') {
+      sameSiteRaw = 'strict';
+    } else if (sameSiteRaw == 'lax') {
+      sameSiteRaw = 'lax';
+    } else {
+      sameSiteRaw = 'unspecified';
+    }
+
+    String path = json['path']?.toString().trim() ?? '/';
+    if (path.isEmpty) path = '/';
 
     return CookieItem(
       name: json['name']?.toString() ?? '',
       value: json['value']?.toString() ?? '',
-      domain: json['domain']?.toString() ?? '',
-      path: json['path']?.toString() ?? '/',
+      domain: json['domain']?.toString().trim() ?? '',
+      path: path,
       secure: json['secure'] == true,
       httpOnly: json['httpOnly'] == true,
       session: isSession,
       expirationDate: exp,
-      sameSite: json['sameSite']?.toString() ?? 'lax',
+      sameSite: sameSiteRaw,
     );
   }
 
