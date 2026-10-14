@@ -26,7 +26,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   static const String _defaultMobileUserAgent =
       'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
   static const String _desktopUserAgent =
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
   @override
   void initState() {
@@ -44,11 +44,28 @@ class _BrowserScreenState extends State<BrowserScreen> {
           onProgress: (progress) {
             if (mounted) setState(() => _progress = progress);
           },
+          onNavigationRequest: (NavigationRequest request) {
+            // WhatsApp Web strictly requires desktop browser environment.
+            // If user enters web.whatsapp.com, auto-switch to Desktop mode so QR code loads:
+            if (request.url.contains('web.whatsapp.com') && !_isDesktopMode) {
+              setState(() => _isDesktopMode = true);
+              _controller.setUserAgent(_desktopUserAgent);
+              _controller.loadRequest(Uri.parse(request.url));
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
           onPageStarted: (url) {
             _onUrlChanged(url);
+            if (url.contains('whatsapp.com')) {
+              _injectWhatsAppDesktopShims();
+            }
           },
           onPageFinished: (url) async {
             _onUrlChanged(url);
+            if (url.contains('whatsapp.com')) {
+              _injectWhatsAppDesktopShims();
+            }
             await _updateHistoryState();
             await _fetchCookieCount();
           },
@@ -59,6 +76,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final androidController = _controller.platform as AndroidWebViewController;
       AndroidWebViewController.enableDebugging(true);
       androidController.setMediaPlaybackRequiresUserGesture(false);
+      androidController.setAllowFileAccess(true);
+      androidController.setAllowContentAccess(true);
+      androidController.setGeolocationEnabled(true);
+      androidController.setMixedContentMode(MixedContentMode.alwaysAllow);
+      androidController.setOnPlatformPermissionRequest((request) {
+        request.grant();
+      });
       final cookiePlatform = WebViewCookieManager().platform;
       if (cookiePlatform is AndroidWebViewCookieManager) {
         cookiePlatform.setAcceptThirdPartyCookies(androidController, true);
@@ -96,6 +120,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  void _injectWhatsAppDesktopShims() {
+    _controller.runJavaScript('''
+      try {
+        if (window.navigator) {
+          if (navigator.userAgentData) {
+            Object.defineProperty(navigator.userAgentData, 'mobile', { get: () => false });
+            Object.defineProperty(navigator.userAgentData, 'platform', { get: () => 'Windows' });
+          }
+          Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+        }
+      } catch (e) {}
+    ''');
+  }
+
   void _navigateTo(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return;
@@ -108,6 +146,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     } else {
       // Search query
       target = 'https://www.google.com/search?q=${Uri.encodeComponent(trimmed)}';
+    }
+
+    if (target.contains('web.whatsapp.com') && !_isDesktopMode) {
+      setState(() => _isDesktopMode = true);
+      _controller.setUserAgent(_desktopUserAgent);
     }
 
     _controller.loadRequest(Uri.parse(target));
@@ -151,7 +194,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _isDesktopMode = !_isDesktopMode;
     });
     _controller.setUserAgent(_isDesktopMode ? _desktopUserAgent : _defaultMobileUserAgent);
-    _controller.reload();
+    if (_isDesktopMode && _currentUrl.contains('www.whatsapp.com')) {
+      _navigateTo('https://web.whatsapp.com');
+    } else {
+      _controller.reload();
+    }
   }
 
   @override

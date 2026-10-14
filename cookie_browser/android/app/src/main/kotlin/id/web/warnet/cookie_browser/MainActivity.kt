@@ -1,8 +1,11 @@
 package id.web.warnet.cookie_browser
 
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
+import android.webkit.ServiceWorkerController
+import android.webkit.WebSettings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -16,6 +19,20 @@ class MainActivity: FlutterActivity() {
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                val swController = ServiceWorkerController.getInstance()
+                swController.serviceWorkerWebSettings.apply {
+                    allowContentAccess = true
+                    allowFileAccess = true
+                    blockNetworkLoads = false
+                    cacheMode = WebSettings.LOAD_DEFAULT
+                }
+            } catch (e: Exception) {
+                // Ignore if not supported on custom vendor ROMs
+            }
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -182,6 +199,11 @@ class MainActivity: FlutterActivity() {
                     targets.add("https://google.com/")
                     targets.add("https://m.youtube.com/")
                     targets.add("https://www.youtube.com/")
+                }
+                if (rawDomain == "whatsapp.com" || rawDomain.endsWith(".whatsapp.com")) {
+                    targets.add("https://web.whatsapp.com/")
+                    targets.add("https://www.whatsapp.com/")
+                    targets.add("https://whatsapp.com/")
                 }
             }
         }
