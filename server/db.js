@@ -285,6 +285,159 @@ async function clearDummyData() {
 }
 
 /**
+ * Add or update a single cookie for a PC in database
+ * @param {string} pcName
+ * @param {object} cookieData
+ * @param {object|null} original
+ */
+async function saveOrUpdateSingleCookie(pcName, cookieData, original = null) {
+  const p = getPool();
+  if (!pcName || !cookieData || !cookieData.name) {
+    return { success: false, error: 'Nama PC dan nama cookie wajib diisi' };
+  }
+
+  // 1. Fetch current snapshot for pcName
+  const [rows] = await p.query('SELECT cookies_json, client_ip, is_encrypted FROM client_cookie_snapshots WHERE pc_name = ? LIMIT 1', [pcName]);
+  let cookies = [];
+  let clientIp = '127.0.0.1';
+  let isEncrypted = 0;
+
+  if (rows.length > 0) {
+    try {
+      cookies = JSON.parse(rows[0].cookies_json || '[]');
+    } catch (_) {
+      cookies = [];
+    }
+    clientIp = rows[0].client_ip || '127.0.0.1';
+    isEncrypted = rows[0].is_encrypted || 0;
+  }
+
+  // Target identity
+  const origName = original ? original.name : cookieData.name;
+  const origDomain = cleanDomain(original ? original.domain : cookieData.domain);
+  const origPath = original ? (original.path || '/') : (cookieData.path || '/');
+
+  // Format new cookie object
+  const cleanCookie = {
+    name: String(cookieData.name || '').trim(),
+    value: String(cookieData.value || ''),
+    domain: cleanDomain(cookieData.domain || 'unknown'),
+    path: String(cookieData.path || '/'),
+    secure: Boolean(cookieData.secure),
+    httpOnly: Boolean(cookieData.httpOnly),
+    sameSite: String(cookieData.sameSite || 'unspecified'),
+    session: Boolean(cookieData.session || !cookieData.expirationDate),
+    expirationDate: typeof cookieData.expirationDate === 'number' ? cookieData.expirationDate : null
+  };
+
+  // Find index in cookies array
+  const existingIdx = cookies.findIndex(c => 
+    c.name === origName && 
+    cleanDomain(c.domain) === origDomain && 
+    (c.path || '/') === origPath
+  );
+
+  if (existingIdx !== -1) {
+    cookies[existingIdx] = cleanCookie;
+  } else {
+    cookies.push(cleanCookie);
+  }
+
+  // Save back via saveCookiesToDb
+  await saveCookiesToDb(pcName, clientIp, cookies, isEncrypted, 'all');
+  return { success: true, cookie: cleanCookie, totalCookies: cookies.length };
+}
+
+/**
+ * Delete a single cookie for a PC
+ * @param {string} pcName
+ * @param {string} cookieName
+ * @param {string} cookieDomain
+ * @param {string} cookiePath
+ */
+async function deleteSingleCookie(pcName, cookieName, cookieDomain, cookiePath = '/') {
+  const p = getPool();
+  const [rows] = await p.query('SELECT cookies_json, client_ip, is_encrypted FROM client_cookie_snapshots WHERE pc_name = ? LIMIT 1', [pcName]);
+  if (rows.length === 0) {
+    return { success: false, error: 'PC tidak ditemukan' };
+  }
+
+  let cookies = [];
+  try {
+    cookies = JSON.parse(rows[0].cookies_json || '[]');
+  } catch (_) {
+    cookies = [];
+  }
+
+  const clientIp = rows[0].client_ip || '127.0.0.1';
+  const isEncrypted = rows[0].is_encrypted || 0;
+  const targetDomain = cleanDomain(cookieDomain);
+
+  const initialLen = cookies.length;
+  cookies = cookies.filter(c => !(c.name === cookieName && cleanDomain(c.domain) === targetDomain && (c.path || '/') === (cookiePath || '/')));
+
+  // Update snapshot and items
+  await saveCookiesToDb(pcName, clientIp, cookies, isEncrypted, 'all');
+  return { success: true, deleted: initialLen - cookies.length, totalCookies: cookies.length };
+}
+
+/**
+ * Bulk import cookies for a PC
+ * @param {string} pcName
+ * @param {Array<object>} newCookiesList
+ */
+async function importCookiesToDb(pcName, newCookiesList) {
+  if (!pcName || !Array.isArray(newCookiesList) || newCookiesList.length === 0) {
+    return { success: false, error: 'PC atau daftar cookie tidak valid' };
+  }
+
+  const p = getPool();
+  const [rows] = await p.query('SELECT cookies_json, client_ip, is_encrypted FROM client_cookie_snapshots WHERE pc_name = ? LIMIT 1', [pcName]);
+  let cookies = [];
+  let clientIp = '127.0.0.1';
+  let isEncrypted = 0;
+
+  if (rows.length > 0) {
+    try {
+      cookies = JSON.parse(rows[0].cookies_json || '[]');
+    } catch (_) {
+      cookies = [];
+    }
+    clientIp = rows[0].client_ip || '127.0.0.1';
+    isEncrypted = rows[0].is_encrypted || 0;
+  }
+
+  const cookieMap = new Map();
+  for (const c of cookies) {
+    const k = `${cleanDomain(c.domain)}:${c.path || '/'}:${c.name}`;
+    cookieMap.set(k, c);
+  }
+
+  let addedCount = 0;
+  for (const raw of newCookiesList) {
+    if (!raw || !raw.name) continue;
+    const cleanC = {
+      name: String(raw.name || '').trim(),
+      value: String(raw.value || ''),
+      domain: cleanDomain(raw.domain || 'unknown'),
+      path: String(raw.path || '/'),
+      secure: Boolean(raw.secure),
+      httpOnly: Boolean(raw.httpOnly),
+      sameSite: String(raw.sameSite || 'unspecified'),
+      session: Boolean(raw.session || !raw.expirationDate),
+      expirationDate: typeof raw.expirationDate === 'number' ? raw.expirationDate : null
+    };
+    const k = `${cleanC.domain}:${cleanC.path}:${cleanC.name}`;
+    cookieMap.set(k, cleanC);
+    addedCount++;
+  }
+
+  const merged = Array.from(cookieMap.values());
+  await saveCookiesToDb(pcName, clientIp, merged, isEncrypted, 'all');
+  return { success: true, totalCookies: merged.length, importedCount: addedCount };
+}
+
+/**
  * Authenticate operator against MySQL database or master admin
  * @param {string} username
  * @param {string} password
@@ -374,5 +527,8 @@ module.exports = {
   loadAllRecordsFromDb,
   deletePcFromDb,
   clearDummyData,
-  authenticateUser
+  authenticateUser,
+  saveOrUpdateSingleCookie,
+  deleteSingleCookie,
+  importCookiesToDb
 };
