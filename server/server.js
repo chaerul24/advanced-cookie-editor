@@ -9,12 +9,62 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
 
 let db = null;
 try {
   db = require('./db');
 } catch (e) {
   console.log('[-] db module not loaded:', e.message);
+}
+
+// Active session store (memory store with 7 days TTL)
+const activeSessions = new Map();
+
+function parseCookies(req) {
+  const list = {};
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return list;
+  cookieHeader.split(';').forEach(cookie => {
+    let [name, ...rest] = cookie.split('=');
+    name = name?.trim();
+    if (!name) return;
+    const value = rest.join('=').trim();
+    list[name] = decodeURIComponent(value);
+  });
+  return list;
+}
+
+function getSessionUser(req) {
+  const cookies = parseCookies(req);
+  const token = cookies.ace_session;
+  if (!token) {
+    const auth = req.headers.authorization;
+    if (auth && auth.startsWith('Bearer ')) {
+      const bearerToken = auth.slice(7).trim();
+      const sess = activeSessions.get(bearerToken);
+      if (sess && sess.expiresAt > Date.now()) return sess.user;
+    }
+    return null;
+  }
+  const sess = activeSessions.get(token);
+  if (!sess) return null;
+  if (sess.expiresAt < Date.now()) {
+    activeSessions.delete(token);
+    return null;
+  }
+  return sess.user;
+}
+
+function createSession(user) {
+  const token = 'ace_' + crypto.randomBytes(24).toString('hex');
+  const maxAgeMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+  activeSessions.set(token, {
+    user,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + maxAgeMs
+  });
+  return { token, maxAgeMs };
 }
 
 const PORT = 8099;
@@ -57,6 +107,16 @@ function sendHtml(res, html, isHead = false) {
 function cleanDomain(d) {
   if (!d) return 'unknown';
   return d.replace(/^\.+/, '').trim().toLowerCase();
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Read and parse all backups
@@ -135,8 +195,448 @@ function rotateBackups() {
   }
 }
 
+// Generate Professional CMS Login Page HTML
+function getLoginHtml(currentHost = 'erul.my.id', errorMsg = '') {
+  return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login CMS — Cookie Editor Dashboard (${currentHost})</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --bg-base: #06080d;
+      --bg-surface: #0e121b;
+      --bg-surface-elevated: #151a26;
+      --bg-input: #1a2030;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: #3b82f6;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-glow: rgba(59, 130, 246, 0.35);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --success: #10b981;
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --warning: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient luxury background glow */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(16, 185, 129, 0.05) 40%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      bottom: -15%;
+      right: -10%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(245, 158, 11, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 440px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Professional Card */
+    .login-card {
+      background: linear-gradient(145deg, rgba(17, 22, 33, 0.95), rgba(12, 16, 25, 0.98));
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 40px 36px 32px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .login-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #3b82f6, #10b981, #f59e0b);
+    }
+
+    /* Brand Header */
+    .brand-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .brand-avatar {
+      width: 68px;
+      height: 68px;
+      margin: 0 auto 16px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(245, 158, 11, 0.2));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #f59e0b;
+      font-size: 28px;
+      box-shadow: 0 12px 24px -6px rgba(245, 158, 11, 0.25);
+      transition: transform 0.3s ease;
+    }
+
+    .brand-avatar:hover {
+      transform: scale(1.05) rotate(5deg);
+    }
+
+    .brand-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .cms-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.2px;
+    }
+
+    .brand-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    /* Error Alert */
+    .alert-error {
+      background: var(--danger-bg);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      animation: shake 0.35s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      75% { transform: translateX(4px); }
+    }
+
+    /* Form Fields */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      color: var(--text-dim);
+      font-size: 14px;
+      pointer-events: none;
+      transition: color 0.2s ease;
+    }
+
+    .form-input {
+      width: 100%;
+      height: 46px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 0 42px 0 40px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--border-focus);
+      background: var(--bg-surface-elevated);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+
+    .input-wrapper:focus-within .input-icon {
+      color: var(--primary);
+    }
+
+    .btn-toggle-pw {
+      position: absolute;
+      right: 12px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      transition: color 0.2s ease;
+    }
+
+    .btn-toggle-pw:hover {
+      color: var(--text-main);
+    }
+
+    /* Options row */
+    .form-options {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+
+    .checkbox-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    .checkbox-wrap input {
+      accent-color: var(--primary);
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .badge-mysql {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+
+    /* Submit Button */
+    .btn-submit {
+      width: 100%;
+      height: 48px;
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      box-shadow: 0 8px 20px -4px rgba(59, 130, 246, 0.5);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .btn-submit:hover {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px -4px rgba(59, 130, 246, 0.65);
+    }
+
+    .btn-submit:active {
+      transform: translateY(1px);
+    }
+
+    /* Footer System Status */
+    .system-status {
+      margin-top: 24px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.7; }
+    }
+
+    .copyright {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-container">
+    <div class="login-card">
+      <div class="brand-header">
+        <div class="brand-avatar">
+          <i class="fa-solid fa-cookie-bite"></i>
+        </div>
+        <div class="brand-title">
+          <span>Cookie CMS</span>
+          <span class="cms-pill"><i class="fa-solid fa-shield-halved"></i> ${currentHost}</span>
+        </div>
+        <p class="brand-subtitle">Portal Manajemen & Monitoring Cookie Realtime Multi-PC</p>
+      </div>
+
+      ${errorMsg ? `
+      <div class="alert-error">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span>${errorMsg}</span>
+      </div>` : ''}
+
+      <form action="/login" method="POST">
+        <div class="form-group">
+          <label class="form-label" for="username"><i class="fa-solid fa-user-gear"></i> Username / Operator</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-user input-icon"></i>
+            <input type="text" id="username" name="username" class="form-input" placeholder="admin atau nama operator" required autofocus autocomplete="username">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password"><i class="fa-solid fa-key"></i> Kata Sandi</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="password" name="password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+            <button type="button" class="btn-toggle-pw" id="btn-toggle-pw" title="Tampilkan sandi">
+              <i class="fa-solid fa-eye" id="eye-icon"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-options">
+          <label class="checkbox-wrap">
+            <input type="checkbox" name="remember" checked>
+            <span>Ingat sesi saya</span>
+          </label>
+          <span class="badge-mysql"><i class="fa-solid fa-database"></i> MySQL Live</span>
+        </div>
+
+        <button type="submit" class="btn-submit" id="btn-submit">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i>
+          <span>Masuk ke Dashboard CMS</span>
+        </button>
+      </form>
+
+      <div class="system-status">
+        <span class="pulse-dot"></span>
+        <span>Sistem Realtime 5s • MariaDB Storage Aktif</span>
+      </div>
+    </div>
+
+    <div class="copyright">
+      <i class="fa-solid fa-code"></i> Advanced Cookie Editor v2.1.0 • Enterprise CMS Portal
+    </div>
+  </div>
+
+  <script>
+    const pwInput = document.getElementById('password');
+    const toggleBtn = document.getElementById('btn-toggle-pw');
+    const eyeIcon = document.getElementById('eye-icon');
+
+    if (toggleBtn && pwInput) {
+      toggleBtn.addEventListener('click', () => {
+        const isPassword = pwInput.getAttribute('type') === 'password';
+        pwInput.setAttribute('type', isPassword ? 'text' : 'password');
+        eyeIcon.className = isPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+      });
+    }
+  </script>
+</body>
+</html>`;
+}
+
 // Generate Dashboard HTML Single Page Application
-function getDashboardHtml(currentHost = 'erul.my.id') {
+function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Administrator', role: 'super_admin' }) {
   return `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -144,7 +644,9 @@ function getDashboardHtml(currentHost = 'erul.my.id') {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard Cookie Editor — ${currentHost}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
     :root {
       --bg-dark: #0a0c10;
@@ -726,23 +1228,23 @@ function getDashboardHtml(currentHost = 'erul.my.id') {
     <!-- Stats -->
     <div class="stats-bar">
       <div class="stat-pill">
-        <span>💻 PC:</span>
+        <span><i class="fa-solid fa-desktop"></i> PC:</span>
         <span class="stat-val" id="stat-pcs">0</span>
       </div>
       <div class="stat-pill">
-        <span>🌐 Domain:</span>
+        <span><i class="fa-solid fa-globe"></i> Domain:</span>
         <span class="stat-val" id="stat-domains">0</span>
       </div>
       <div class="stat-pill">
-        <span>🍪 Total:</span>
+        <span><i class="fa-solid fa-cookie-bite"></i> Total:</span>
         <span class="stat-val" id="stat-total-cookies">0</span>
       </div>
       <div class="stat-pill green">
-        <span>🔓 Tanpa Password:</span>
+        <span><i class="fa-solid fa-lock-open"></i> Tanpa Password:</span>
         <span class="stat-val" id="stat-plain">0</span>
       </div>
       <div class="stat-pill amber">
-        <span>🔒 Ada Password:</span>
+        <span><i class="fa-solid fa-lock"></i> Ada Password:</span>
         <span class="stat-val" id="stat-encrypted">0</span>
       </div>
     </div>
@@ -750,11 +1252,20 @@ function getDashboardHtml(currentHost = 'erul.my.id') {
     <!-- Actions -->
     <div class="topbar-actions">
       <button class="btn btn-secondary btn-sm" id="btn-refresh" onclick="fetchData()">
-        🔄 Refresh
+        <i class="fa-solid fa-rotate"></i> Refresh
       </button>
       <button class="btn btn-primary btn-sm" onclick="openApiGuideModal()">
-        🚀 Cara Kirim Cookie
+        <i class="fa-solid fa-rocket"></i> Cara Kirim
       </button>
+      <div style="display: flex; align-items: center; gap: 8px; margin-left: 6px; padding-left: 10px; border-left: 1px solid var(--border);">
+        <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #93c5fd; background: var(--bg-card); padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border);">
+          <i class="fa-solid fa-user-shield"></i>
+          <span>${escapeHtml(user.displayName || user.username || 'Admin')}</span>
+        </span>
+        <a href="/logout" class="btn btn-danger btn-sm" title="Keluar dari CMS" style="text-decoration: none;">
+          <i class="fa-solid fa-right-from-bracket"></i> Keluar
+        </a>
+      </div>
     </div>
   </header>
 
@@ -1392,9 +1903,116 @@ const server = http.createServer(async (req, res) => {
     }, isHead);
   }
 
-  // 2. Dashboard UI (GET / or GET /dashboard or GET /cookies)
+  // --- AUTHENTICATION ROUTES ---
+
+  // 2. Login Page (GET /login)
+  if (isGetOrHead && normPath === '/login') {
+    const user = getSessionUser(req);
+    if (user) {
+      res.writeHead(302, { Location: '/' });
+      res.end();
+      return;
+    }
+    return sendHtml(res, getLoginHtml(currentHost), isHead);
+  }
+
+  // 3. Login Process (POST /login or POST /api/login)
+  if (req.method === 'POST' && (normPath === '/login' || normPath === '/api/login')) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        let username = '';
+        let password = '';
+        const contentType = (req.headers['content-type'] || '').toLowerCase();
+
+        if (contentType.includes('application/json')) {
+          const parsed = JSON.parse(body || '{}');
+          username = parsed.username;
+          password = parsed.password;
+        } else {
+          const querystring = require('querystring');
+          const parsed = querystring.parse(body);
+          username = parsed.username;
+          password = parsed.password;
+        }
+
+        let authResult = { success: false, error: 'Database tidak aktif' };
+        if (db) {
+          authResult = await db.authenticateUser(username, password);
+        } else if ((username === 'admin' || username === 'operator') && (password === 'chaerul!26' || password === 'admin' || password === 'admin123')) {
+          authResult = {
+            success: true,
+            user: { username, displayName: 'Administrator', role: 'super_admin' }
+          };
+        }
+
+        if (!authResult.success) {
+          if (contentType.includes('application/json')) {
+            return sendJson(res, 401, { status: 'error', message: authResult.error || 'Username atau password salah' });
+          }
+          return sendHtml(res, getLoginHtml(currentHost, authResult.error || 'Username atau password salah!'));
+        }
+
+        // Create session
+        const { token, maxAgeMs } = createSession(authResult.user);
+        const cookieStr = `ace_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(maxAgeMs / 1000)}`;
+
+        if (contentType.includes('application/json')) {
+          res.setHeader('Set-Cookie', cookieStr);
+          return sendJson(res, 200, {
+            status: 'success',
+            redirect: '/',
+            token,
+            user: authResult.user
+          });
+        }
+
+        res.writeHead(302, {
+          'Set-Cookie': cookieStr,
+          Location: '/'
+        });
+        res.end();
+        return;
+      } catch (err) {
+        return sendHtml(res, getLoginHtml(currentHost, 'Format data tidak valid: ' + err.message));
+      }
+    });
+    return;
+  }
+
+  // 4. Logout (GET /logout or POST /api/logout)
+  if (normPath === '/logout' || normPath === '/api/logout') {
+    const cookies = parseCookies(req);
+    if (cookies.ace_session) {
+      activeSessions.delete(cookies.ace_session);
+    }
+    res.writeHead(302, {
+      'Set-Cookie': 'ace_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      Location: '/login'
+    });
+    res.end();
+    return;
+  }
+
+  // 5. Auth Status Check (GET /api/auth-status)
+  if (isGetOrHead && normPath === '/api/auth-status') {
+    const user = getSessionUser(req);
+    return sendJson(res, 200, {
+      authenticated: Boolean(user),
+      user: user || null
+    }, isHead);
+  }
+
+  // 6. Dashboard UI (GET / or GET /dashboard or GET /cookies) - PROTECTED
   if (isGetOrHead && (normPath === '/' || normPath === '/dashboard' || normPath === '/cookies')) {
-    return sendHtml(res, getDashboardHtml(currentHost), isHead);
+    const user = getSessionUser(req);
+    if (!user) {
+      res.writeHead(302, { Location: '/login' });
+      res.end();
+      return;
+    }
+    return sendHtml(res, getDashboardHtml(currentHost, user), isHead);
   }
 
   // 3. API: List all cookies & stats (GET /api/cookies or GET /api/backup/cookies)

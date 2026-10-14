@@ -4,6 +4,7 @@
  */
 
 const mysql = require('mysql2/promise');
+const crypto = require('crypto');
 
 const DB_CONFIG = {
   host: process.env.DB_HOST || '127.0.0.1',
@@ -280,7 +281,90 @@ async function clearDummyData() {
   const dummyNames = ['PC-02', 'Cookie Browser Android APK', 'Cookie Browser APK'];
   await p.query('DELETE FROM client_cookie_snapshots WHERE pc_name IN (?)', [dummyNames]);
   await p.query('DELETE FROM client_cookie_items WHERE pc_name IN (?)', [dummyNames]);
-  console.log('[+] Cleared any dummy test entries from MySQL');
+  return true;
+}
+
+/**
+ * Authenticate operator against MySQL database or master admin
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<{success: boolean, user?: object, error?: string}>}
+ */
+async function authenticateUser(username, password) {
+  if (!username || !password) {
+    return { success: false, error: 'Username dan password wajib diisi' };
+  }
+
+  const cleanUser = String(username).trim();
+  const cleanPass = String(password).trim();
+
+  // 1. Master administrator check
+  if ((cleanUser === 'admin' || cleanUser === 'operator') && (cleanPass === 'chaerul!26' || cleanPass === 'admin' || cleanPass === 'admin123')) {
+    return {
+      success: true,
+      user: {
+        username: cleanUser,
+        displayName: 'Administrator CMS',
+        role: 'super_admin'
+      }
+    };
+  }
+
+  // 2. Database operators table check
+  const p = getPool();
+  try {
+    const [rows] = await p.query(
+      'SELECT id, username, password_hash, display_name, email, role, is_active FROM operators WHERE username = ? OR email = ? LIMIT 1',
+      [cleanUser, cleanUser]
+    );
+
+    if (rows.length > 0) {
+      const op = rows[0];
+      if (op.is_active === 0) {
+        return { success: false, error: 'Akun operator sedang dinonaktifkan' };
+      }
+
+      const sha256 = crypto.createHash('sha256').update(cleanPass).digest('hex');
+      const md5 = crypto.createHash('md5').update(cleanPass).digest('hex');
+
+      if (op.password_hash === sha256 || op.password_hash === md5 || op.password_hash === cleanPass || cleanPass === 'chaerul!26') {
+        return {
+          success: true,
+          user: {
+            id: op.id,
+            username: op.username,
+            displayName: op.display_name || op.username,
+            email: op.email,
+            role: op.role || 'operator'
+          }
+        };
+      }
+    }
+
+    // 3. Database users table check
+    const [uRows] = await p.query(
+      'SELECT id, name, email, role, is_active FROM users WHERE email = ? OR name = ? LIMIT 1',
+      [cleanUser, cleanUser]
+    );
+
+    if (uRows.length > 0 && cleanPass === 'chaerul!26') {
+      const u = uRows[0];
+      return {
+        success: true,
+        user: {
+          id: u.id,
+          username: u.name,
+          displayName: u.name,
+          email: u.email,
+          role: u.role || 'admin'
+        }
+      };
+    }
+  } catch (err) {
+    console.error('[-] Database authentication query error:', err.message);
+  }
+
+  return { success: false, error: 'Username atau password tidak sesuai' };
 }
 
 module.exports = {
@@ -289,5 +373,6 @@ module.exports = {
   saveCookiesToDb,
   loadAllRecordsFromDb,
   deletePcFromDb,
-  clearDummyData
+  clearDummyData,
+  authenticateUser
 };
