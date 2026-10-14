@@ -13,7 +13,7 @@ import 'import_dialog.dart';
 class CookieEditorSheet extends StatefulWidget {
   final String activeUrl;
   final String activeDomain;
-  final VoidCallback onCookiesChanged;
+  final void Function([String? targetDomain]) onCookiesChanged;
 
   const CookieEditorSheet({
     super.key,
@@ -136,9 +136,8 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
         cookies: _allCookies,
         activeDomain: widget.activeDomain,
         onRestore: (restored) async {
-          for (var c in restored) {
-            await CookieManagerService.setCookie(widget.activeUrl, c);
-          }
+          await CookieManagerService.setCookiesBatch(widget.activeUrl, restored);
+          await CookieManagerService.flush();
           widget.onCookiesChanged();
           await _loadCookies();
         },
@@ -196,9 +195,13 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
               initialTabIndex: 0,
               initialFile: file,
               initialContent: content,
-              onImportCompleted: () async {
-                widget.onCookiesChanged();
-                await _loadCookies();
+              onImportCompleted: (targetDomain) async {
+                widget.onCookiesChanged(targetDomain);
+                if (targetDomain != null && mounted) {
+                  Navigator.of(context).pop();
+                } else {
+                  await _loadCookies();
+                }
               },
             ),
           );
@@ -212,9 +215,13 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
               activeUrl: widget.activeUrl,
               activeDomain: widget.activeDomain,
               initialTabIndex: 0,
-              onImportCompleted: () async {
-                widget.onCookiesChanged();
-                await _loadCookies();
+              onImportCompleted: (targetDomain) async {
+                widget.onCookiesChanged(targetDomain);
+                if (targetDomain != null && mounted) {
+                  Navigator.of(context).pop();
+                } else {
+                  await _loadCookies();
+                }
               },
             ),
           );
@@ -239,9 +246,13 @@ class _CookieEditorSheetState extends State<CookieEditorSheet> {
         activeUrl: widget.activeUrl,
         activeDomain: widget.activeDomain,
         initialTabIndex: 1,
-        onImportCompleted: () async {
-          widget.onCookiesChanged();
-          await _loadCookies();
+        onImportCompleted: (targetDomain) async {
+          widget.onCookiesChanged(targetDomain);
+          if (targetDomain != null && mounted) {
+            Navigator.of(context).pop();
+          } else {
+            await _loadCookies();
+          }
         },
       ),
     );

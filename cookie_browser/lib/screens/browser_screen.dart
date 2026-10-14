@@ -23,6 +23,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _canGoForward = false;
   bool _isDesktopMode = false;
 
+  static const String _defaultMobileUserAgent =
+      'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  static const String _desktopUserAgent =
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +38,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _initWebView() {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(_defaultMobileUserAgent)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
@@ -120,9 +126,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
       builder: (ctx) => CookieEditorSheet(
         activeUrl: _currentUrl,
         activeDomain: _getActiveDomain(),
-        onCookiesChanged: () async {
+        onCookiesChanged: ([String? targetDomain]) async {
           await _fetchCookieCount();
-          _controller.reload();
+          if (targetDomain != null && targetDomain.isNotEmpty) {
+            String targetUrl;
+            if (targetDomain.contains('youtube.com')) {
+              targetUrl = 'https://m.youtube.com';
+            } else if (targetDomain.startsWith('http://') || targetDomain.startsWith('https://')) {
+              targetUrl = targetDomain;
+            } else {
+              targetUrl = 'https://$targetDomain';
+            }
+            _navigateTo(targetUrl);
+          } else {
+            _controller.reload();
+          }
         },
       ),
     );
@@ -132,10 +150,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _isDesktopMode = !_isDesktopMode;
     });
-    final ua = _isDesktopMode
-        ? 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
-        : '';
-    _controller.setUserAgent(ua.isEmpty ? null : ua);
+    _controller.setUserAgent(_isDesktopMode ? _desktopUserAgent : _defaultMobileUserAgent);
     _controller.reload();
   }
 

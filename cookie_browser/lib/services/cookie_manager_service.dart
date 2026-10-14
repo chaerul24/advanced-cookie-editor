@@ -38,16 +38,14 @@ class CookieManagerService {
       }
 
       return list;
-    } on PlatformException catch (e) {
-      // Fallback or error
+    } on PlatformException catch (_) {
       return [];
     }
   }
 
-  /// Add or update a cookie
+  /// Add or update a single cookie
   static Future<bool> setCookie(String url, CookieItem cookie) async {
     try {
-      // Determine the best target URL based on the cookie's domain:
       String targetUrl = url;
       if (cookie.domain.isNotEmpty) {
         final cleanDomain = cookie.domain.replaceFirst(RegExp(r'^\.+'), '').trim();
@@ -64,6 +62,35 @@ class CookieManagerService {
       return res ?? false;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Batch set multiple cookies at once with native async completion tracking
+  static Future<int> setCookiesBatch(String activeUrl, List<CookieItem> cookies) async {
+    try {
+      final List<Map<String, String>> payload = [];
+      for (var c in cookies) {
+        String targetUrl = activeUrl;
+        if (c.domain.isNotEmpty) {
+          final cleanDomain = c.domain.replaceFirst(RegExp(r'^\.+'), '').trim();
+          if (cleanDomain.isNotEmpty) {
+            final scheme = c.secure ? 'https://' : 'http://';
+            targetUrl = '$scheme$cleanDomain${c.path.isNotEmpty ? c.path : '/'}';
+          }
+        }
+        payload.add({
+          'url': targetUrl,
+          'cookie': c.toSetCookieString(),
+        });
+      }
+
+      final count = await _channel.invokeMethod<int>('setCookiesBatch', {
+        'activeUrl': activeUrl,
+        'cookies': payload,
+      });
+      return count ?? 0;
+    } catch (_) {
+      return 0;
     }
   }
 

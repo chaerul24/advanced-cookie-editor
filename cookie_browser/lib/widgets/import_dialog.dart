@@ -9,7 +9,7 @@ import '../services/crypto_service.dart';
 class ImportDialog extends StatefulWidget {
   final String activeUrl;
   final String activeDomain;
-  final VoidCallback onImportCompleted;
+  final void Function(String? targetDomain)? onImportCompleted;
   final int initialTabIndex;
   final PlatformFile? initialFile;
   final String? initialContent;
@@ -18,7 +18,7 @@ class ImportDialog extends StatefulWidget {
     super.key,
     required this.activeUrl,
     required this.activeDomain,
-    required this.onImportCompleted,
+    this.onImportCompleted,
     this.initialTabIndex = 0,
     this.initialFile,
     this.initialContent,
@@ -205,28 +205,44 @@ class _ImportDialogState extends State<ImportDialog> with SingleTickerProviderSt
         }
       }
 
-      int applied = 0;
+      final List<CookieItem> itemsToImport = [];
+      final Map<String, int> domainCounts = {};
+
       for (var item in cookieList) {
         if (item is Map<String, dynamic>) {
           final cookie = CookieItem.fromJson(item);
-          final ok = await CookieManagerService.setCookie(widget.activeUrl, cookie);
-          if (ok) applied++;
+          itemsToImport.add(cookie);
+
+          final clean = cookie.domain.replaceFirst(RegExp(r'^\.+'), '').trim().toLowerCase();
+          if (clean.isNotEmpty) {
+            final key = clean.contains('youtube.com') ? 'm.youtube.com' : clean;
+            domainCounts[key] = (domainCounts[key] ?? 0) + 1;
+          }
         }
       }
+
+      String? primaryDomain;
+      if (domainCounts.isNotEmpty) {
+        primaryDomain = domainCounts.entries.reduce((a, b) => a.value > b.value ? a : b).key;
+      }
+
+      final applied = await CookieManagerService.setCookiesBatch(widget.activeUrl, itemsToImport);
 
       // Flush all imported cookies to disk storage immediately
       await CookieManagerService.flush();
 
-      widget.onImportCompleted();
-
       if (mounted) {
         Navigator.of(context).pop();
+        final msg = primaryDomain != null && !widget.activeUrl.contains(primaryDomain.replaceFirst('m.', ''))
+            ? 'Berhasil mengimpor $applied cookie! Membuka $primaryDomain...'
+            : 'Berhasil mengimpor $applied cookie ke browser!';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.green.shade800,
-            content: Text('Berhasil mengimpor $applied cookie ke browser!'),
+            content: Text(msg),
           ),
         );
+        widget.onImportCompleted?.call(primaryDomain);
       }
     } catch (e) {
       if (mounted) {
