@@ -129,6 +129,13 @@ class DashboardController {
     this.btnCloudList = document.getElementById('btn-cloud-list');
     this.cloudStatusMsg = document.getElementById('cloud-status-msg');
 
+    // Auto-Sync 5s controls
+    this.dashAutosyncStatusPill = document.getElementById('dash-autosync-status-pill');
+    this.dashAutosyncEnabled = document.getElementById('dash-autosync-enabled');
+    this.dashAutosyncInterval = document.getElementById('dash-autosync-interval');
+    this.dashAutosyncPc = document.getElementById('dash-autosync-pc');
+    this.btnDashAutosyncSave = document.getElementById('btn-dash-autosync-save');
+
     // Settings
     this.settingKdfIterations = document.getElementById('setting-kdf-iterations');
     this.settingMaskDefault = document.getElementById('setting-mask-default');
@@ -201,6 +208,7 @@ class DashboardController {
     await this.loadCookies();
     await this.loadCookieSets();
     this.checkCloudHealth();
+    this.initDashAutoSync();
   }
 
   async loadPreferences() {
@@ -601,6 +609,9 @@ class DashboardController {
     }
     if (this.btnCloudList) {
       this.btnCloudList.addEventListener('click', () => this.handleCloudList());
+    }
+    if (this.btnDashAutosyncSave) {
+      this.btnDashAutosyncSave.addEventListener('click', () => this.saveDashAutoSyncConfig());
     }
 
     // Settings inputs
@@ -1573,6 +1584,60 @@ class DashboardController {
     this.cloudStatusMsg.style.display = 'block';
     this.cloudStatusMsg.style.whiteSpace = 'pre-line';
     this.cloudStatusMsg.style.color = isError ? 'var(--danger)' : 'var(--text-secondary)';
+  }
+
+  // --- Realtime Auto-Sync (5s Interval) Methods ---
+  async initDashAutoSync() {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+    try {
+      const data = await chrome.storage.local.get(['ace_autosync_config', 'ace_autosync_status']);
+      const config = data.ace_autosync_config || { enabled: true, intervalSec: 5, serverUrl: 'https://erul.my.id/api/cookies', pcName: 'PC-01' };
+
+      if (this.dashAutosyncEnabled) this.dashAutosyncEnabled.checked = config.enabled !== false;
+      if (this.dashAutosyncInterval) this.dashAutosyncInterval.value = config.intervalSec || 5;
+      if (this.dashAutosyncPc) this.dashAutosyncPc.value = config.pcName || 'PC-01';
+
+      this.updateDashAutoSyncPill(data.ace_autosync_status, config);
+      setInterval(async () => {
+        try {
+          const d = await chrome.storage.local.get(['ace_autosync_status', 'ace_autosync_config']);
+          this.updateDashAutoSyncPill(d.ace_autosync_status, d.ace_autosync_config);
+        } catch (_) {}
+      }, 3000);
+    } catch (_) {}
+  }
+
+  updateDashAutoSyncPill(status, config) {
+    if (!this.dashAutosyncStatusPill) return;
+    const isEnabled = config ? config.enabled !== false : true;
+    if (!isEnabled) {
+      this.dashAutosyncStatusPill.className = 'badge badge-secondary';
+      this.dashAutosyncStatusPill.textContent = 'Auto OFF';
+    } else if (status && status.lastStatus === 'error') {
+      this.dashAutosyncStatusPill.className = 'badge badge-danger';
+      this.dashAutosyncStatusPill.textContent = 'Sync Error';
+    } else {
+      this.dashAutosyncStatusPill.className = 'badge badge-success';
+      const sec = config?.intervalSec || 5;
+      this.dashAutosyncStatusPill.textContent = `🟢 Active ${sec}s`;
+    }
+  }
+
+  async saveDashAutoSyncConfig() {
+    const config = {
+      enabled: this.dashAutosyncEnabled ? this.dashAutosyncEnabled.checked : true,
+      intervalSec: parseInt(this.dashAutosyncInterval?.value, 10) || 5,
+      pcName: (this.dashAutosyncPc?.value || 'PC-01').trim(),
+      serverUrl: (this.cloudServerUrl?.value || 'https://erul.my.id/api/cookies').trim(),
+      scope: 'all'
+    };
+
+    if (chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'UPDATE_AUTOSYNC_CONFIG', config });
+    }
+    await chrome.storage.local.set({ ace_autosync_config: config });
+    UIService.showToast(`Auto-Sync disimpan: setiap ${config.intervalSec} detik ke ${config.pcName}`, 'success');
+    this.updateDashAutoSyncPill(null, config);
   }
 }
 

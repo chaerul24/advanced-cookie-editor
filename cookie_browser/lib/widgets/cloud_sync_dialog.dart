@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/cookie_item.dart';
 import '../services/cloud_sync_service.dart';
@@ -26,6 +27,8 @@ class _CloudSyncDialogState extends State<CloudSyncDialog> with SingleTickerProv
 
   bool _encrypt = false;
   bool _isLoading = false;
+  bool _autoSync5s = false;
+  Timer? _autoSyncTimer;
   bool? _isServerOnline;
   String? _statusMessage;
 
@@ -38,6 +41,7 @@ class _CloudSyncDialogState extends State<CloudSyncDialog> with SingleTickerProv
 
   @override
   void dispose() {
+    _autoSyncTimer?.cancel();
     _tabController.dispose();
     _serverUrlController.dispose();
     _pushPasswordController.dispose();
@@ -80,6 +84,19 @@ class _CloudSyncDialogState extends State<CloudSyncDialog> with SingleTickerProv
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _toggleAutoSync(bool enable) {
+    setState(() => _autoSync5s = enable);
+    _autoSyncTimer?.cancel();
+    if (enable) {
+      _handlePush();
+      _autoSyncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted && _autoSync5s && !_isLoading) {
+          _handlePush();
+        }
+      });
     }
   }
 
@@ -172,8 +189,17 @@ class _CloudSyncDialogState extends State<CloudSyncDialog> with SingleTickerProv
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('Export ${widget.cookies.length} cookies to warnet.web.id', style: const TextStyle(fontSize: 12)),
+                        Text('Export ${widget.cookies.length} cookies ke https://erul.my.id/', style: const TextStyle(fontSize: 12)),
                         const SizedBox(height: 8),
+                        SwitchListTile(
+                          title: const Text('⚡ Auto-Sync Setiap 5 Detik', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                          subtitle: const Text('Kirim otomatis setiap 5 detik ke server tanpa password', style: TextStyle(fontSize: 10)),
+                          value: _autoSync5s,
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          activeColor: Colors.greenAccent,
+                          onChanged: (v) => _toggleAutoSync(v),
+                        ),
                         CheckboxListTile(
                           title: const Text('Encrypt with AES-GCM 256', style: TextStyle(fontSize: 12)),
                           value: _encrypt,

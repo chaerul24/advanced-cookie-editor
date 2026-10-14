@@ -293,16 +293,41 @@
           <!-- Cloudflare Backup & Sync Card -->
           <div class="card io-card" id="card-cloud-sync">
             <div class="card-header">
-              <h3>Cloudflare Sync (warnet.web.id)</h3>
+              <h3>Cloudflare Sync (erul.my.id)</h3>
               <span id="cloud-health-badge" class="badge">Checking...</span>
             </div>
             <div class="card-body">
               <div class="form-group">
                 <label for="cloud-server-url">Endpoint URL</label>
                 <div style="display: flex; gap: 8px;">
-                  <input type="text" id="cloud-server-url" value="https://warnet.web.id/api/_extension_/cookies" style="flex: 1;">
+                  <input type="text" id="cloud-server-url" value="https://erul.my.id/api/cookies" style="flex: 1;">
                   <button type="button" id="btn-cloud-health" class="btn btn-secondary btn-xs" title="Test server health">Test Health</button>
                 </div>
+              </div>
+
+              <!-- Auto-Sync 5s Realtime Section -->
+              <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <label style="font-weight: 700; font-size: 12px; color: var(--text-primary); margin: 0;">⚡ Realtime Auto-Sync (5 Detik)</label>
+                  <span id="dash-autosync-status-pill" class="badge badge-success">Active 5s</span>
+                </div>
+                <div class="form-group">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="dash-autosync-enabled" checked>
+                    <span><strong>Aktifkan kirim otomatis setiap 5 detik</strong></span>
+                  </label>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <div class="form-group" style="flex: 1;">
+                    <label for="dash-autosync-interval">Interval (Detik)</label>
+                    <input type="number" id="dash-autosync-interval" value="5" min="1" max="60">
+                  </div>
+                  <div class="form-group" style="flex: 1;">
+                    <label for="dash-autosync-pc">Nama PC</label>
+                    <input type="text" id="dash-autosync-pc" value="PC-01" placeholder="PC-01">
+                  </div>
+                </div>
+                <button type="button" id="btn-dash-autosync-save" class="btn btn-secondary btn-xs" style="width: 100%; margin-top: 4px;">💾 Simpan Pengaturan Auto-Sync</button>
               </div>
 
               <!-- Push / Backup section -->

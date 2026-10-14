@@ -1411,7 +1411,8 @@ const server = http.createServer((req, res) => {
         }
 
         const domain = payload.domain || payload.metadata?.domain || (cookies.length > 0 && cookies[0].domain ? cleanDomain(cookies[0].domain) : 'all');
-        const id = 'bk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+        const safePc = pcName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+        const id = payload.isManualBackup ? ('bk_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8)) : ('pc_' + safePc);
         const filename = `${id}.json`;
 
         const record = {

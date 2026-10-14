@@ -16,6 +16,10 @@
       </div>
     </div>
     <div class="header-actions">
+      <button id="btn-auto-sync-status" class="auto-sync-pill" title="Auto-Sync 5s Settings">
+        <span class="sync-dot"></span>
+        <span id="sync-pill-text">Auto 5s</span>
+      </button>
       <button id="btn-theme-toggle" class="icon-btn" title="Toggle Theme" aria-label="Toggle Theme">🌓</button>
       <button id="btn-open-dashboard" class="icon-btn" title="Open Full Dashboard" aria-label="Open Full Dashboard">⛶</button>
     </div>
@@ -264,6 +268,51 @@
         <button type="button" id="btn-import-cloud" class="btn btn-secondary" title="Fetch latest backup from warnet.web.id">☁️ warnet.web.id</button>
         <button type="button" id="btn-import-cancel" class="btn btn-secondary">Cancel</button>
         <button type="button" id="btn-import-execute" class="btn btn-primary">Import Cookies</button>
+      </div>
+    </div>
+  <!-- Auto-Sync 5s Settings Modal -->
+  <div id="autosync-modal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="autosync-title">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <h2 id="autosync-title">🔄 Auto-Sync 5 Detik</h2>
+        <button id="autosync-close-btn" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+          Kirim semua cookie otomatis setiap 5 detik ke server tanpa password (realtime per-PC).
+        </p>
+
+        <div class="form-group">
+          <label class="checkbox-label" style="font-size: 13px;">
+            <input type="checkbox" id="autosync-enabled" checked>
+            <span><strong>Aktifkan Auto-Sync Otomatis</strong></span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="autosync-interval">Interval Kirim (Detik)</label>
+          <input type="number" id="autosync-interval" value="5" min="1" max="60" style="width: 100%;">
+          <div class="form-help">Default: 5 detik. Cookie langsung dikirim berkala.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="autosync-pc-name">Nama Komputer / PC</label>
+          <input type="text" id="autosync-pc-name" value="PC-01" placeholder="Contoh: PC-01, PC-Billing, Kasir">
+          <div class="form-help">Nama PC yang akan tampil di dashboard erul.my.id.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="autosync-server-url">Target Server URL</label>
+          <input type="text" id="autosync-server-url" value="https://erul.my.id/api/cookies">
+        </div>
+
+        <div id="autosync-status-info" style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); margin-top: 10px;">
+          Status: Memuat...
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-autosync-trigger-now" class="btn btn-secondary">🚀 Kirim Sekarang</button>
+        <button type="button" id="btn-autosync-save" class="btn btn-primary">Simpan</button>
       </div>
     </div>
   </div>

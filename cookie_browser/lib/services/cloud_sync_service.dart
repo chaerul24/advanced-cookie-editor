@@ -4,8 +4,8 @@ import '../models/cookie_item.dart';
 import 'crypto_service.dart';
 
 class CloudSyncService {
-  static const String defaultServerUrl = 'https://warnet.web.id/api/_extension_/cookies';
-  static const String defaultHealthUrl = 'https://warnet.web.id/api/_extension_/health';
+  static const String defaultServerUrl = 'https://erul.my.id/api/cookies';
+  static const String defaultHealthUrl = 'https://erul.my.id/health';
 
   /// Check server health
   static Future<bool> checkHealth([String url = defaultHealthUrl]) async {

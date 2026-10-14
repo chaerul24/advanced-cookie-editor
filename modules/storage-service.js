@@ -13,7 +13,11 @@ const DEFAULT_SETTINGS = {
   pbkdf2Iterations: 250000,
   defaultSort: 'name_asc',
   showThirdParty: true,
-  cloudSyncUrl: 'https://warnet.web.id/api/_extension_/cookies'
+  cloudSyncUrl: 'https://erul.my.id/api/cookies',
+  autoSyncEnabled: true,
+  autoSyncIntervalSec: 5,
+  autoSyncPcName: 'PC-01',
+  autoSyncScope: 'all'
 };
 
 export class StorageService {
