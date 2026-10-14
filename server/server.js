@@ -24,16 +24,26 @@ function setCors(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-PC-Name, X-Client-Name');
 }
 
-function sendJson(res, statusCode, data) {
+function sendJson(res, statusCode, data, isHead = false) {
   setCors(res);
-  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(data));
+  const payload = JSON.stringify(data);
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(payload)
+  });
+  if (!isHead) res.end(payload);
+  else res.end();
 }
 
-function sendHtml(res, html) {
+function sendHtml(res, html, isHead = false) {
   setCors(res);
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(html);
+  const len = Buffer.byteLength(html, 'utf8');
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': len
+  });
+  if (!isHead) res.end(html);
+  else res.end();
 }
 
 // Helper to extract clean domain
@@ -119,13 +129,13 @@ function rotateBackups() {
 }
 
 // Generate Dashboard HTML Single Page Application
-function getDashboardHtml() {
+function getDashboardHtml(currentHost = 'erul.my.id') {
   return `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard Cookie Editor — erul.web.id</title>
+  <title>Dashboard Cookie Editor — ${currentHost}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -700,7 +710,7 @@ function getDashboardHtml() {
       <div>
         <div class="brand-title">
           <span>Cookie Editor Dashboard</span>
-          <span class="brand-badge">erul.web.id</span>
+          <span class="brand-badge">${currentHost}</span>
         </div>
         <div class="brand-host">Central Realtime Multi-PC Cookie Inspector</div>
       </div>
@@ -858,19 +868,19 @@ function getDashboardHtml() {
 
       <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; display: flex; flex-direction: column; gap: 14px;">
         <p>
-          Anda dapat mengirimkan cookie dari perangkat/PC manapun langsung ke dashboard <strong style="color: white;">https://erul.web.id/</strong> secara terbuka (tanpa password):
+          Anda dapat mengirimkan cookie dari perangkat/PC manapun langsung ke dashboard <strong style="color: white;">https://${currentHost}/</strong> secara terbuka (tanpa password):
         </p>
 
         <div>
           <strong style="color: white;">1. Endpoint Sinkronisasi:</strong>
           <div style="margin-top: 6px;">
-            <span class="code-chip">POST https://erul.web.id/api/cookies</span>
+            <span class="code-chip">POST https://${currentHost}/api/cookies</span>
           </div>
         </div>
 
         <div>
           <strong style="color: white;">2. Contoh Pengiriman via cURL (dari PC manapun):</strong>
-          <pre style="background: var(--bg-dark); padding: 12px; border-radius: 8px; border: 1px solid var(--border); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a7f3d0; margin-top: 6px; overflow-x: auto;">curl -X POST https://erul.web.id/api/cookies \\
+          <pre style="background: var(--bg-dark); padding: 12px; border-radius: 8px; border: 1px solid var(--border); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a7f3d0; margin-top: 6px; overflow-x: auto;">curl -X POST https://${currentHost}/api/cookies \\
   -H "Content-Type: application/json" \\
   -d '{
     "pc": "PC-01",
@@ -893,7 +903,7 @@ function getDashboardHtml() {
           <strong style="color: white;">3. Dari Ekstensi Chrome/Edge & CookieBrowser APK:</strong>
           <ul style="margin-left: 20px; margin-top: 6px;">
             <li>Buka tab <strong>Cloud Sync</strong> di ekstensi atau APK.</li>
-            <li>Isi Server URL: <span class="code-chip">https://erul.web.id/api/cookies</span></li>
+            <li>Isi Server URL: <span class="code-chip">https://${currentHost}/api/cookies</span></li>
             <li><strong>JANGAN centang</strong> "Encrypt with Password" (agar cookie dikirim tanpa password).</li>
             <li>Klik <strong>Push Cookies</strong> ➔ Data langsung tampil di dashboard ini!</li>
           </ul>
@@ -1314,25 +1324,28 @@ const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
   const normPath = pathname.replace(/\/+$/, '') || '/';
+  const isHead = req.method === 'HEAD';
+  const isGetOrHead = req.method === 'GET' || isHead;
+  const currentHost = (req.headers['x-forwarded-host'] || req.headers.host || 'erul.my.id').split(':')[0];
 
   // 1. Health Endpoint
   if (normPath === '/health' || normPath === '/api/_extension_' || normPath === '/api/_extension_/health') {
     return sendJson(res, 200, {
       status: 'ok',
       service: 'cookie-editor-dashboard',
-      domain: 'erul.web.id',
+      domain: currentHost,
       version: '2.0.0',
       timestamp: new Date().toISOString()
-    });
+    }, isHead);
   }
 
   // 2. Dashboard UI (GET / or GET /dashboard or GET /cookies)
-  if (req.method === 'GET' && (normPath === '/' || normPath === '/dashboard' || normPath === '/cookies')) {
-    return sendHtml(res, getDashboardHtml());
+  if (isGetOrHead && (normPath === '/' || normPath === '/dashboard' || normPath === '/cookies')) {
+    return sendHtml(res, getDashboardHtml(currentHost), isHead);
   }
 
   // 3. API: List all cookies & stats (GET /api/cookies or GET /api/backup/cookies)
-  if (req.method === 'GET' && (normPath === '/api/cookies' || normPath === '/api/backup/cookies' || normPath === '/api/_extension_/cookies')) {
+  if (isGetOrHead && (normPath === '/api/cookies' || normPath === '/api/backup/cookies' || normPath === '/api/_extension_/cookies')) {
     const records = loadAllRecords();
     const pcSet = new Set();
     const domainSet = new Set();
@@ -1358,7 +1371,7 @@ const server = http.createServer((req, res) => {
         encryptedCount
       },
       records
-    });
+    }, isHead);
   }
 
   // 4. API: POST cookies (from PC, Extension, or Android APK)
@@ -1424,7 +1437,7 @@ const server = http.createServer((req, res) => {
           domain,
           itemCount: record.itemCount,
           isEncrypted,
-          message: 'Cookies successfully received and saved to erul.web.id dashboard'
+          message: `Cookies successfully received and saved to ${currentHost} dashboard`
         });
       } catch (err) {
         return sendJson(res, 400, { error: 'Invalid JSON payload: ' + err.message });
