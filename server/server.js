@@ -232,6 +232,7 @@ function getLoginHtml(currentHost = 'erul.my.id', errorMsg = '') {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="icon" href="/favicon.ico">
   <style>
     :root {
       --bg-base: #06080d;
@@ -672,6 +673,7 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="icon" href="/favicon.ico">
   <style>
     :root {
       --bg-dark: #0a0c10;
@@ -2227,8 +2229,8 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
             '<div class="cookie-val-box">' +
               '<span class="val-text" id="val-' + cookieKey + '">' + escapeHtml(displayVal) + '</span>' +
               '<div style="display: flex; gap: 4px;">' +
-                '<button class="copy-icon-btn" title="Toggle Show" onclick="toggleReveal(\'' + cookieKey + '\', \'' + escapeJs(c.value || '') + '\')">👁️</button>' +
-                '<button class="copy-icon-btn" title="Copy Value" onclick="copyText(\'' + escapeJs(c.value || '') + '\')">📋</button>' +
+                '<button class="copy-icon-btn btn-toggle-val" title="Toggle Show">👁️</button>' +
+                '<button class="copy-icon-btn btn-copy-val" title="Copy Value">📋</button>' +
               '</div>' +
             '</div>' +
           '</td>' +
@@ -2243,11 +2245,26 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
           '<td style="font-size: 11px; color: var(--text-muted); font-family: monospace;">' + expText + '</td>' +
           '<td style="text-align: right; white-space: nowrap;">' +
             '<div style="display: inline-flex; gap: 6px;">' +
-              '<button class="btn btn-secondary btn-sm" title="Copy Pair" onclick="copyText(\'' + escapeJs(c.name + '=' + c.value) + '\')"><i class="fa-solid fa-copy"></i></button>' +
-              '<button class="btn btn-secondary btn-sm" title="Edit Cookie" data-cookie='' + safeCookieJson + '' data-pc='' + safePcName + '' onclick="openEditModalFromRow(this)"><i class="fa-solid fa-pen"></i></button>' +
-              '<button class="btn btn-danger btn-sm" title="Hapus Cookie" onclick="deleteCookieItem(\'' + escapeJs(item.pcName) + '\', \'' + escapeJs(c.name) + '\', \'' + escapeJs(c.domain) + '\', \'' + escapeJs(c.path || '/') + '\')"><i class="fa-solid fa-trash"></i></button>' +
+              '<button class="btn btn-secondary btn-sm btn-copy-pair" title="Copy Pair"><i class="fa-solid fa-copy"></i></button>' +
+              '<button class="btn btn-secondary btn-sm btn-edit-cookie" title="Edit Cookie"><i class="fa-solid fa-pen"></i></button>' +
+              '<button class="btn btn-danger btn-sm btn-del-cookie" title="Hapus Cookie"><i class="fa-solid fa-trash"></i></button>' +
             '</div>' +
           '</td>';
+
+        const btnToggle = tr.querySelector('.btn-toggle-val');
+        if (btnToggle) btnToggle.onclick = (function(k, v) { return function() { toggleReveal(k, v); }; })(cookieKey, c.value || '');
+
+        const btnCopyVal = tr.querySelector('.btn-copy-val');
+        if (btnCopyVal) btnCopyVal.onclick = (function(v) { return function() { copyText(v); }; })(c.value || '');
+
+        const btnCopyPair = tr.querySelector('.btn-copy-pair');
+        if (btnCopyPair) btnCopyPair.onclick = (function(pair) { return function() { copyText(pair); }; })((c.name || '') + '=' + (c.value || ''));
+
+        const btnEdit = tr.querySelector('.btn-edit-cookie');
+        if (btnEdit) btnEdit.onclick = (function(pc, cookieObj) { return function() { openEditCookieModal(pc, cookieObj); }; })(item.pcName, c);
+
+        const btnDel = tr.querySelector('.btn-del-cookie');
+        if (btnDel) btnDel.onclick = (function(pc, name, dom, path) { return function() { deleteCookieItem(pc, name, dom, path); }; })(item.pcName, c.name, c.domain, c.path || '/');
 
         tbody.appendChild(tr);
       }
@@ -2521,7 +2538,7 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       try {
         const res = await fetch('/api/cookies/export?format=' + fmt + '&pc=' + encodeURIComponent(pc) + '&domain=' + encodeURIComponent(dom) + '&plain=1');
         const text = await res.text();
-        previewBox.value = text.substring(0, 1500) + (text.length > 1500 ? '\n... (total ' + text.length + ' karakter)' : '');
+        previewBox.value = text.substring(0, 1500) + (text.length > 1500 ? (String.fromCharCode(10) + '... (total ' + text.length + ' karakter)') : '');
       } catch (err) {
         previewBox.value = 'Gagal memuat pratinjau: ' + err.message;
       }
@@ -2633,16 +2650,6 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
         .replace(/'/g, '&#39;');
     }
 
-    function escapeJs(str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, '\\n')
-        .replace(/\r/g, '');
-    }
-
     // --- REALTIME SESSION MONITOR (1s POLLING) ---
     let monitorDevices = [];
     let isFetchingMonitor = false;
@@ -2733,7 +2740,7 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
               '</div>' +
               '<div style="display: flex; align-items: center; gap: 10px;">' +
                 '<span style="font-size: 11px; color: var(--text-muted);">Heartbeat: <strong>' + lastSeenText + '</strong></span>' +
-                '<button class="btn btn-secondary btn-xs" style="color: #ef4444;" onclick="unpairDeviceAction(\\\'' + escapeJs(d.deviceUuid) + '\\\')">Unpair</button>' +
+                '<button class="btn btn-secondary btn-xs btn-unpair-device" style="color: #ef4444;" data-uuid="' + escapeHtml(d.deviceUuid) + '">Unpair</button>' +
               '</div>' +
             '</div>' +
             '<div style="display: flex; flex-direction: column; gap: 6px;">' +
@@ -2743,6 +2750,11 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       }
 
       container.innerHTML = html;
+      container.querySelectorAll('.btn-unpair-device').forEach(function(btn) {
+        btn.onclick = function() {
+          unpairDeviceAction(btn.getAttribute('data-uuid'));
+        };
+      });
     }
 
     async function unpairDeviceAction(uuid) {
@@ -2880,6 +2892,17 @@ const server = http.createServer(async (req, res) => {
   const isHead = req.method === 'HEAD';
   const isGetOrHead = req.method === 'GET' || isHead;
   const currentHost = (req.headers['x-forwarded-host'] || req.headers.host || 'erul.my.id').split(':')[0];
+
+  // Favicon Handler (serves cookie emoji SVG to prevent 404 errors)
+  if (normPath === '/favicon.ico') {
+    const svgFavicon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🍪</text></svg>';
+    res.writeHead(200, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'public, max-age=86400'
+    });
+    res.end(svgFavicon);
+    return;
+  }
 
   // 1. Health Endpoint
   if (normPath === '/health' || normPath === '/api/_extension_' || normPath === '/api/_extension_/health') {
