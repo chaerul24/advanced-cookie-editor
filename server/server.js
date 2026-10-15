@@ -1516,6 +1516,9 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="copySessionMonitorJson()" title="Salin seluruh status monitor sesi ke format JSON">
+              <i class="fa-solid fa-code"></i> Copy JSON
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="fetchSessionMonitorData(false)">
               <i class="fa-solid fa-arrows-rotate" id="btn-refresh-monitor"></i> Refresh Monitor
             </button>
@@ -3204,6 +3207,20 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       }
     }
 
+    function copySessionMonitorJson() {
+      if (!monitorDevices || monitorDevices.length === 0) {
+        showToast('Belum ada data monitor sesi yang terdeteksi', 'warning');
+        return;
+      }
+      try {
+        const jsonStr = JSON.stringify(monitorDevices, null, 2);
+        copyText(jsonStr);
+        showToast('Data Session Monitor (JSON) berhasil disalin ke clipboard!', 'success');
+      } catch (err) {
+        showToast('Gagal memformat JSON: ' + err.message, 'error');
+      }
+    }
+
     function renderSessionMonitor() {
       const container = document.getElementById('session-monitor-device-list');
       if (!container) return;
@@ -3268,8 +3285,9 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
                 '<span class="badge badge-plain" style="font-size: 10px;">Pairing: ' + escapeHtml(d.pairingCode) + '</span>' +
                 onlineBadge +
               '</div>' +
-              '<div style="display: flex; align-items: center; gap: 10px;">' +
+              '<div style="display: flex; align-items: center; gap: 8px;">' +
                 '<span style="font-size: 11px; color: var(--text-muted);">Heartbeat: <strong>' + lastSeenText + '</strong></span>' +
+                '<button class="btn btn-secondary btn-xs btn-copy-dev-json" title="Salin JSON perangkat ini" data-uuid="' + escapeHtml(d.deviceUuid) + '"><i class="fa-solid fa-code"></i> Copy JSON</button>' +
                 '<button class="btn btn-secondary btn-xs btn-unpair-device" style="color: #ef4444;" data-uuid="' + escapeHtml(d.deviceUuid) + '">Unpair</button>' +
               '</div>' +
             '</div>' +
@@ -3280,6 +3298,16 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       }
 
       container.innerHTML = html;
+      container.querySelectorAll('.btn-copy-dev-json').forEach(function(btn) {
+        btn.onclick = function() {
+          const uuid = btn.getAttribute('data-uuid');
+          const dev = monitorDevices.find(function(item) { return item.deviceUuid === uuid; });
+          if (dev) {
+            copyText(JSON.stringify(dev, null, 2));
+            showToast('JSON perangkat ' + (dev.deviceName || uuid) + ' berhasil disalin!', 'success');
+          }
+        };
+      });
       container.querySelectorAll('.btn-unpair-device').forEach(function(btn) {
         btn.onclick = function() {
           unpairDeviceAction(btn.getAttribute('data-uuid'));
