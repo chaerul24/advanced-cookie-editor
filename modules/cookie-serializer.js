@@ -133,6 +133,13 @@ export function validateImportPayload(data, maxItemLimit = 10000) {
 
   // Support both official versioned structure and direct array format (e.g. from standard Cookie-Editor tools)
   if (Array.isArray(data)) {
+    // Smart detection: User accidentally pasted Session Monitor Telemetry JSON instead of Cookie JSON
+    if (data.length > 0 && (data[0].deviceUuid || data[0].sessions)) {
+      return {
+        valid: false,
+        error: 'Data yang Anda tempel adalah "Status Monitor Sesi Perangkat" (Device Telemetry), bukan data Cookie. Silakan salin "Copy Cookie JSON" dari domain youtube.com di https://erul.my.id.'
+      };
+    }
     cookieList = data;
   } else if (Array.isArray(data.cookies)) {
     if (data.format && data.format !== SCHEMA_FORMAT) {

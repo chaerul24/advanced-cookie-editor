@@ -1516,8 +1516,8 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
-            <button class="btn btn-secondary btn-sm" onclick="copySessionMonitorJson()" title="Salin seluruh status monitor sesi ke format JSON">
-              <i class="fa-solid fa-code"></i> Copy JSON
+            <button class="btn btn-secondary btn-sm" onclick="copySessionMonitorJson()" title="Salin telemetry status monitor sesi perangkat (Device Status JSON)">
+              <i class="fa-solid fa-tower-broadcast"></i> Copy Status JSON
             </button>
             <button class="btn btn-secondary btn-sm" onclick="fetchSessionMonitorData(false)">
               <i class="fa-solid fa-arrows-rotate" id="btn-refresh-monitor"></i> Refresh Monitor
@@ -2542,7 +2542,8 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
             '</div>' +
           '</div>' +
           '<div class="domain-header-actions">' +
-            '<button class="btn btn-secondary btn-xs btn-copy-domain-all" title="Salin semua cookie domain ini (Format name=value)"><i class="fa-solid fa-copy"></i> Salin Semua</button>' +
+            '<button class="btn btn-secondary btn-xs btn-copy-domain-json" title="Salin Cookie JSON (Cocok untuk Import ke Advanced Cookie Editor)"><i class="fa-solid fa-code"></i> Copy Cookie JSON</button>' +
+            '<button class="btn btn-secondary btn-xs btn-copy-domain-all" title="Salin format header (name=value; ...)"><i class="fa-solid fa-copy"></i> Header</button>' +
             '<button class="btn btn-secondary btn-xs btn-export-domain-item" title="Export domain ini"><i class="fa-solid fa-download"></i> Export</button>' +
             '<button class="btn btn-danger btn-xs btn-delete-domain-item" title="Hapus semua cookie domain ini"><i class="fa-solid fa-trash"></i></button>' +
           '</div>';
@@ -2564,7 +2565,34 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
           };
         })(dom);
 
-        // Header Action: Copy Domain
+        // Header Action: Copy Domain Cookie JSON (Compatible with Advanced Cookie Editor)
+        const btnCopyDomainJson = header.querySelector('.btn-copy-domain-json');
+        if (btnCopyDomainJson) {
+          btnCopyDomainJson.onclick = (function(items, d) {
+            return function(e) {
+              e.stopPropagation();
+              const cleanCookies = items.map(function(it) {
+                const c = it.cookie;
+                return {
+                  name: c.name,
+                  value: c.value || '',
+                  domain: c.domain,
+                  path: c.path || '/',
+                  secure: Boolean(c.secure),
+                  httpOnly: Boolean(c.httpOnly),
+                  sameSite: c.sameSite || 'unspecified',
+                  session: Boolean(c.session),
+                  expirationDate: c.expirationDate ? Number(c.expirationDate) : undefined,
+                  storeId: c.storeId || '0'
+                };
+              });
+              copyText(JSON.stringify(cleanCookies, null, 2));
+              showToast('Cookie JSON domain ' + d + ' (' + cleanCookies.length + ' cookie) disalin! Cocok untuk Advanced Cookie Editor.', 'success');
+            };
+          })(grp.items, dom);
+        }
+
+        // Header Action: Copy Domain Header String
         const btnCopyDomain = header.querySelector('.btn-copy-domain-all');
         if (btnCopyDomain) {
           btnCopyDomain.onclick = (function(items) {
@@ -3221,6 +3249,23 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       }
     }
 
+    async function copyCookiesForDomain(targetDomain) {
+      const cleanDom = cleanDomain(targetDomain);
+      try {
+        const res = await fetch('/api/cookies/export?format=json&domain=' + encodeURIComponent(cleanDom) + '&plain=1');
+        const jsonText = await res.text();
+        const parsed = JSON.parse(jsonText);
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          showToast('Tidak ada cookie tersimpan di database untuk domain ' + cleanDom, 'warning');
+          return;
+        }
+        copyText(JSON.stringify(parsed, null, 2));
+        showToast('Berhasil menyalin ' + parsed.length + ' cookie ' + cleanDom + ' (JSON)! Siap di-paste ke Advanced Cookie Editor.', 'success');
+      } catch (err) {
+        showToast('Gagal mengambil cookie domain: ' + err.message, 'error');
+      }
+    }
+
     function renderSessionMonitor() {
       const container = document.getElementById('session-monitor-device-list');
       if (!container) return;
@@ -3267,8 +3312,11 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
                   '</span>' +
                   stateBadge +
                 '</div>' +
-                '<div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">' +
-                  'Pemeriksaan: ' + checkedTime +
+                '<div style="display: flex; align-items: center; gap: 10px;">' +
+                  '<span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">' +
+                    'Pemeriksaan: ' + checkedTime +
+                  '</span>' +
+                  '<button class="btn btn-secondary btn-xs btn-copy-domain-cookies" data-domain="' + escapeHtml(s.domain) + '" title="Salin Cookie ' + escapeHtml(s.domain) + ' yang valid ke clipboard (format JSON siap import ke Advanced Cookie Editor)"><i class="fa-solid fa-cookie"></i> Copy Cookie JSON</button>' +
                 '</div>' +
               '</div>';
           }
@@ -3298,6 +3346,12 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       }
 
       container.innerHTML = html;
+      container.querySelectorAll('.btn-copy-domain-cookies').forEach(function(btn) {
+        btn.onclick = function() {
+          const dom = btn.getAttribute('data-domain');
+          copyCookiesForDomain(dom);
+        };
+      });
       container.querySelectorAll('.btn-copy-dev-json').forEach(function(btn) {
         btn.onclick = function() {
           const uuid = btn.getAttribute('data-uuid');

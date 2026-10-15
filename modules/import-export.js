@@ -99,10 +99,41 @@ export class ImportExportService {
       throw new Error('Data size exceeds maximum limit of 5 MB.');
     }
 
+    const trimmed = text.trim();
     let data;
     try {
-      data = JSON.parse(text.trim());
+      data = JSON.parse(trimmed);
     } catch {
+      // Check if user pasted cookie header pairs: "name1=value1; name2=value2"
+      if (trimmed.includes('=') && !trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        const pairs = trimmed.split(';').map(p => p.trim()).filter(Boolean);
+        const parsedCookies = [];
+        for (const pair of pairs) {
+          const eqIdx = pair.indexOf('=');
+          if (eqIdx > 0) {
+            const name = pair.substring(0, eqIdx).trim();
+            const val = pair.substring(eqIdx + 1).trim();
+            if (name) {
+              parsedCookies.push({
+                name: name,
+                value: val,
+                domain: typeof window !== 'undefined' && window.location ? window.location.hostname : '',
+                path: '/',
+                secure: true,
+                httpOnly: false,
+                sameSite: 'unspecified'
+              });
+            }
+          }
+        }
+        if (parsedCookies.length > 0) {
+          return {
+            isEncrypted: false,
+            parsedData: parsedCookies,
+            rawText: text
+          };
+        }
+      }
       throw new Error('Input is not valid JSON. Ensure proper syntax.');
     }
 
