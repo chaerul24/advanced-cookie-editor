@@ -1048,32 +1048,47 @@ class PopupController {
   async updateAutoSyncUI() {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
     try {
-      const data = await chrome.storage.local.get(['ace_autosync_config', 'ace_autosync_status']);
-      const config = data.ace_autosync_config || { enabled: true, intervalSec: 5, serverUrl: 'https://erul.my.id/api/cookies', pcName: 'PC-01' };
-      const status = data.ace_autosync_status || { lastStatus: 'idle', cookieCount: 0 };
+      const data = await chrome.storage.local.get(['ace_monitor_state', 'ace_monitor_config', 'ace_device_uuid', 'ace_pairing_code']);
+      const state = data.ace_monitor_state || {};
+      const config = data.ace_monitor_config || { enabled: true, intervalMs: 1000, serverUrl: 'https://erul.my.id', deviceName: 'PC-01' };
+      const ytStatus = state.domainStatuses?.['youtube.com'] || { sessionState: 'SESSION_UNKNOWN' };
 
       if (!this.btnAutoSyncStatus) return;
 
       if (!config.enabled) {
         this.btnAutoSyncStatus.className = 'auto-sync-pill';
-        this.syncPillText.textContent = 'Auto OFF';
-      } else if (status.lastStatus === 'error') {
-        this.btnAutoSyncStatus.className = 'auto-sync-pill error';
-        this.syncPillText.textContent = 'Auto Err';
-      } else {
+        this.syncPillText.textContent = 'Monitor OFF';
+      } else if (state.isOnline) {
         this.btnAutoSyncStatus.className = 'auto-sync-pill active';
-        this.syncPillText.textContent = `Auto ${config.intervalSec || 5}s`;
+        this.syncPillText.textContent = '1s Live';
+      } else {
+        this.btnAutoSyncStatus.className = 'auto-sync-pill';
+        this.syncPillText.textContent = 'Connecting';
       }
 
       if (this.autosyncStatusInfo) {
-        let lastTimeStr = status.lastSyncTime ? new Date(status.lastSyncTime).toLocaleTimeString() : 'Belum pernah sync';
-        let statusBadge = status.lastStatus === 'success' ? '🟢 Berhasil' : (status.lastStatus === 'error' ? '🔴 Gagal' : '⚪ Standby');
+        let ytBadge = '';
+        if (ytStatus.sessionState === 'LOGIN_DETECTED') {
+          ytBadge = '<span style="color: #10b981; font-weight: bold;">🟢 LOGIN_DETECTED (Sesi Aktif)</span>';
+        } else if (ytStatus.sessionState === 'LOGOUT_DETECTED') {
+          ytBadge = '<span style="color: #ef4444; font-weight: bold;">🔴 LOGOUT_DETECTED (Tidak Login)</span>';
+        } else {
+          ytBadge = '<span style="color: #94a3b8;">⚪ SESSION_UNKNOWN (Belum Diketahui)</span>';
+        }
+
+        const onlineBadge = state.isOnline ? '<span style="color: #10b981; font-weight: bold;">🟢 Online (Heartbeat 1s)</span>' : '<span style="color: #ef4444;">🔴 Terputus</span>';
+
         this.autosyncStatusInfo.innerHTML = `
-          <div><strong>Status:</strong> ${statusBadge}</div>
-          <div><strong>Terakhir Kirim:</strong> ${lastTimeStr} (${status.cookieCount || 0} cookies)</div>
-          <div><strong>Target:</strong> ${config.serverUrl || 'https://erul.my.id/api/cookies'}</div>
-          <div><strong>PC ID:</strong> ${config.pcName || 'PC-01'}</div>
-          ${status.error ? `<div style="color: var(--danger-color); margin-top: 4px;"><strong>Pesan Error:</strong> ${status.error}</div>` : ''}
+          <div><strong>Koneksi Server:</strong> ${onlineBadge}</div>
+          <div><strong>Device UUID:</strong> <code>${data.ace_device_uuid || state.deviceUuid || '-'}</code></div>
+          <div><strong>Kode Pairing:</strong> <code>${data.ace_pairing_code || state.pairingCode || '-'}</code></div>
+          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-color);">
+            <strong>YouTube Status:</strong> ${ytBadge}
+          </div>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+            Target Server: ${config.serverUrl || 'https://erul.my.id'}
+          </div>
+          ${state.error ? `<div style="color: var(--danger-color); margin-top: 4px;"><strong>Pesan:</strong> ${state.error}</div>` : ''}
         `;
       }
     } catch (_) {}
@@ -1081,18 +1096,18 @@ class PopupController {
 
   async openAutoSyncModal() {
     try {
-      const data = await chrome.storage.local.get(['ace_autosync_config']);
-      const config = data.ace_autosync_config || { enabled: true, intervalSec: 5, serverUrl: 'https://erul.my.id/api/cookies', pcName: 'PC-01' };
+      const data = await chrome.storage.local.get(['ace_monitor_config', 'ace_device_uuid']);
+      const config = data.ace_monitor_config || { enabled: true, intervalMs: 1000, serverUrl: 'https://erul.my.id', deviceName: 'PC-01' };
 
       if (this.autosyncEnabled) this.autosyncEnabled.checked = config.enabled !== false;
-      if (this.autosyncInterval) this.autosyncInterval.value = config.intervalSec || 5;
-      if (this.autosyncPcName) this.autosyncPcName.value = config.pcName || 'PC-01';
-      if (this.autosyncServerUrl) this.autosyncServerUrl.value = config.serverUrl || 'https://erul.my.id/api/cookies';
+      if (this.autosyncInterval) this.autosyncInterval.value = Math.max(1, Math.round((config.intervalMs || 1000) / 1000));
+      if (this.autosyncPcName) this.autosyncPcName.value = config.deviceName || 'PC-01';
+      if (this.autosyncServerUrl) this.autosyncServerUrl.value = config.serverUrl || 'https://erul.my.id';
 
       await this.updateAutoSyncUI();
       if (this.autosyncModal) this.autosyncModal.style.display = 'flex';
     } catch (e) {
-      UIService.showToast('Error opening auto-sync: ' + e.message, 'error');
+      UIService.showToast('Error opening monitor settings: ' + e.message, 'error');
     }
   }
 
@@ -1101,19 +1116,20 @@ class PopupController {
   }
 
   async saveAutoSyncConfig() {
+    const intervalSec = parseInt(this.autosyncInterval?.value, 10) || 1;
     const config = {
       enabled: this.autosyncEnabled ? this.autosyncEnabled.checked : true,
-      intervalSec: parseInt(this.autosyncInterval?.value, 10) || 5,
-      pcName: (this.autosyncPcName?.value || 'PC-01').trim(),
-      serverUrl: (this.autosyncServerUrl?.value || 'https://erul.my.id/api/cookies').trim(),
-      scope: 'all'
+      intervalMs: intervalSec * 1000,
+      deviceName: (this.autosyncPcName?.value || 'PC-01').trim(),
+      serverUrl: (this.autosyncServerUrl?.value || 'https://erul.my.id').replace(/\/api\/cookies$/, '').replace(/\/+$/, '').trim(),
+      monitoredDomains: ['youtube.com']
     };
 
     if (chrome?.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'UPDATE_AUTOSYNC_CONFIG', config });
+      chrome.runtime.sendMessage({ type: 'UPDATE_MONITOR_CONFIG', config });
     }
-    await chrome.storage.local.set({ ace_autosync_config: config });
-    UIService.showToast(`Auto-Sync disimpan: setiap ${config.intervalSec} detik ke ${config.pcName}`, 'success');
+    await chrome.storage.local.set({ ace_monitor_config: config });
+    UIService.showToast(`Pengaturan disimpan: Heartbeat ${intervalSec} detik ke ${config.deviceName}`, 'success');
     this.closeAutoSyncModal();
     this.updateAutoSyncUI();
   }
@@ -1121,16 +1137,16 @@ class PopupController {
   async triggerAutoSyncNow() {
     if (this.btnAutosyncTriggerNow) {
       this.btnAutosyncTriggerNow.disabled = true;
-      this.btnAutosyncTriggerNow.textContent = '⏳ Mengirim...';
+      this.btnAutosyncTriggerNow.textContent = '⏳ Memeriksa...';
     }
 
     if (chrome?.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'TRIGGER_AUTOSYNC_NOW' }, (res) => {
+      chrome.runtime.sendMessage({ type: 'TRIGGER_CHECK_NOW' }, () => {
         if (this.btnAutosyncTriggerNow) {
           this.btnAutosyncTriggerNow.disabled = false;
-          this.btnAutosyncTriggerNow.textContent = '🚀 Kirim Sekarang';
+          this.btnAutosyncTriggerNow.textContent = '🚀 Periksa Sekarang';
         }
-        UIService.showToast('Cookie berhasil dikirim ke server!', 'success');
+        UIService.showToast('Status sesi berhasil diperiksa & dikirim!', 'success');
         this.updateAutoSyncUI();
       });
     }

@@ -75,6 +75,40 @@ async function initDb() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 3. Table for paired devices (Session Monitor)
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS devices (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        device_uuid VARCHAR(64) UNIQUE NOT NULL,
+        device_name VARCHAR(100) NOT NULL,
+        pairing_code VARCHAR(16) NOT NULL,
+        pairing_status VARCHAR(20) NOT NULL DEFAULT 'paired',
+        last_seen_at DATETIME,
+        extension_version VARCHAR(20) DEFAULT '1.0.0',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_device_uuid (device_uuid),
+        INDEX idx_last_seen (last_seen_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 4. Table for device session statuses (Realtime status per domain)
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS session_statuses (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        device_id INT NOT NULL,
+        domain VARCHAR(255) NOT NULL,
+        session_state VARCHAR(30) NOT NULL,
+        checked_at DATETIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_device_domain (device_id, domain),
+        INDEX idx_device (device_id),
+        INDEX idx_domain (domain),
+        INDEX idx_checked (checked_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     console.log('[+] MySQL tables initialized successfully in database: ' + DB_CONFIG.database);
     return true;
   } catch (err) {
@@ -532,6 +566,122 @@ async function authenticateUser(username, password) {
   return { success: false, error: 'Username atau password tidak sesuai' };
 }
 
+/**
+ * Register or Pair Device
+ */
+async function pairDevice(deviceUuid, deviceName, pairingCode, version) {
+  version = version || '1.0.0';
+  const p = getPool();
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  await p.query(`
+    INSERT INTO devices (device_uuid, device_name, pairing_code, pairing_status, last_seen_at, extension_version)
+    VALUES (?, ?, ?, 'paired', ?, ?)
+    ON DUPLICATE KEY UPDATE
+      device_name = VALUES(device_name),
+      pairing_code = VALUES(pairing_code),
+      pairing_status = 'paired',
+      last_seen_at = VALUES(last_seen_at),
+      extension_version = VALUES(extension_version);
+  `, [deviceUuid, deviceName, pairingCode, now, version]);
+
+  const [rows] = await p.query('SELECT * FROM devices WHERE device_uuid = ? LIMIT 1', [deviceUuid]);
+  return rows[0];
+}
+
+/**
+ * Update Heartbeat (1s interval)
+ */
+async function updateHeartbeat(deviceUuid) {
+  const p = getPool();
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const [res] = await p.query(`
+    UPDATE devices 
+    SET last_seen_at = ?, updated_at = CURRENT_TIMESTAMP 
+    WHERE device_uuid = ? AND pairing_status = 'paired'
+  `, [now, deviceUuid]);
+  return res.affectedRows > 0;
+}
+
+/**
+ * Update Session Status for Device and Domain
+ * Strictly verifies no credentials or tokens are stored
+ */
+async function updateSessionStatus(deviceUuid, domain, sessionState, checkedAt) {
+  const validStates = ['LOGIN_DETECTED', 'LOGOUT_DETECTED', 'SESSION_UNKNOWN', 'SITE_UNAVAILABLE'];
+  if (!validStates.includes(sessionState)) {
+    sessionState = 'SESSION_UNKNOWN';
+  }
+
+  const p = getPool();
+  const [devRows] = await p.query('SELECT id, pairing_status FROM devices WHERE device_uuid = ? LIMIT 1', [deviceUuid]);
+  if (devRows.length === 0 || devRows[0].pairing_status !== 'paired') {
+    return { success: false, error: 'Device not found or not paired' };
+  }
+
+  const deviceId = devRows[0].id;
+  const checkedSql = checkedAt ? new Date(checkedAt).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  await p.query(`
+    INSERT INTO session_statuses (device_id, domain, session_state, checked_at)
+    VALUES (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      session_state = VALUES(session_state),
+      checked_at = VALUES(checked_at),
+      updated_at = CURRENT_TIMESTAMP;
+  `, [deviceId, domain.toLowerCase().trim(), sessionState, checkedSql]);
+
+  return { success: true, deviceId, domain, sessionState };
+}
+
+/**
+ * Get all devices with their session statuses for Admin Dashboard
+ */
+async function getAdminDevices() {
+  const p = getPool();
+  const [devices] = await p.query('SELECT * FROM devices ORDER BY last_seen_at DESC');
+  const now = Date.now();
+
+  const [statuses] = await p.query('SELECT * FROM session_statuses ORDER BY checked_at DESC');
+  const statusMap = new Map();
+  for (const s of statuses) {
+    if (!statusMap.has(s.device_id)) {
+      statusMap.set(s.device_id, []);
+    }
+    statusMap.get(s.device_id).push({
+      domain: s.domain,
+      sessionState: s.session_state,
+      checkedAt: s.checked_at,
+      updatedAt: s.updated_at
+    });
+  }
+
+  return devices.map(function(d) {
+    const lastSeenMs = d.last_seen_at ? new Date(d.last_seen_at).getTime() : 0;
+    // Considered online if heartbeat received within last 4 seconds
+    const isOnline = (now - lastSeenMs) <= 4000;
+    return {
+      id: d.id,
+      deviceUuid: d.device_uuid,
+      deviceName: d.device_name,
+      pairingCode: d.pairing_code,
+      pairingStatus: d.pairing_status,
+      lastSeenAt: d.last_seen_at,
+      isOnline: isOnline,
+      extensionVersion: d.extension_version,
+      sessions: statusMap.get(d.id) || []
+    };
+  });
+}
+
+/**
+ * Unpair Device
+ */
+async function unpairDevice(deviceUuid) {
+  const p = getPool();
+  const [res] = await p.query("UPDATE devices SET pairing_status = 'unpaired' WHERE device_uuid = ?", [deviceUuid]);
+  return res.affectedRows > 0;
+}
+
 module.exports = {
   getPool,
   initDb,
@@ -542,5 +692,10 @@ module.exports = {
   authenticateUser,
   saveOrUpdateSingleCookie,
   deleteSingleCookie,
-  importCookiesToDb
+  importCookiesToDb,
+  pairDevice,
+  updateHeartbeat,
+  updateSessionStatus,
+  getAdminDevices,
+  unpairDevice
 };

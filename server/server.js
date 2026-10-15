@@ -1357,6 +1357,39 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
         <button class="btn btn-secondary btn-sm" onclick="openApiGuideModal()"><i class="fa-solid fa-code"></i> Endpoint API</button>
       </div>
 
+      <!-- Realtime Browser Session Monitor Card -->
+      <div class="session-monitor-card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); display: flex; align-items: center; justify-content: center; color: #ef4444; font-size: 18px;">
+              <i class="fa-solid fa-tower-broadcast"></i>
+            </div>
+            <div>
+              <h3 style="font-size: 16px; font-weight: 700; color: white; display: flex; align-items: center; gap: 8px;">
+                Browser Session Monitor (Realtime 1s)
+                <span class="badge" style="font-size: 11px; background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 700;">
+                  <i class="fa-solid fa-bolt"></i> 1s Heartbeat Active
+                </span>
+              </h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Memantau status sesi login per perangkat secara realtime tanpa membocorkan cookie atau kredensial autentikasi.
+              </p>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="fetchSessionMonitorData(false)">
+              <i class="fa-solid fa-arrows-rotate" id="btn-refresh-monitor"></i> Refresh Monitor
+            </button>
+          </div>
+        </div>
+
+        <div id="session-monitor-device-list" style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 13px;">
+            <i class="fa-solid fa-spinner fa-spin"></i> Menghubungkan ke monitor sesi...
+          </div>
+        </div>
+      </div>
+
       <!-- Active PC Header Card -->
       <div class="active-header-card" id="active-pc-card">
         <div class="active-info">
@@ -2610,6 +2643,123 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
         .replace(/\r/g, '');
     }
 
+    // --- REALTIME SESSION MONITOR (1s POLLING) ---
+    let monitorDevices = [];
+    let isFetchingMonitor = false;
+
+    async function fetchSessionMonitorData(isBg) {
+      if (isFetchingMonitor) return;
+      isFetchingMonitor = true;
+      const btn = document.getElementById('btn-refresh-monitor');
+      if (btn && !isBg) btn.classList.add('fa-spin');
+
+      try {
+        const res = await fetch('/api/admin/devices');
+        if (res.status === 401) return;
+        const json = await res.json();
+        monitorDevices = json.devices || [];
+        renderSessionMonitor();
+      } catch (err) {
+        // silent fail on periodic background poll
+      } finally {
+        isFetchingMonitor = false;
+        if (btn) btn.classList.remove('fa-spin');
+      }
+    }
+
+    function renderSessionMonitor() {
+      const container = document.getElementById('session-monitor-device-list');
+      if (!container) return;
+
+      if (!monitorDevices || monitorDevices.length === 0) {
+        container.innerHTML = 
+          '<div style="text-align: center; padding: 24px; background: var(--bg-dark); border-radius: 8px; border: 1px dashed var(--border); color: var(--text-muted); font-size: 13px;">' +
+            '<i class="fa-solid fa-laptop-medical" style="font-size: 24px; margin-bottom: 8px; display: block; color: var(--accent);"></i>' +
+            'Belum ada extension perangkat yang terhubung. Ekstensi browser akan otomatis terhubung dan memantau status login YouTube.' +
+          '</div>';
+        return;
+      }
+
+      let html = '';
+      for (const d of monitorDevices) {
+        const isOnline = Boolean(d.isOnline);
+        const onlineBadge = isOnline
+          ? '<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #10b981; font-weight: 700;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span> Online (1s)</span>'
+          : '<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #ef4444; font-weight: 700;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span> Terputus (Offline)</span>';
+
+        const lastSeenText = formatRelativeTime(d.lastSeenAt);
+
+        let sessionsHtml = '';
+        if (d.sessions && d.sessions.length > 0) {
+          for (const s of d.sessions) {
+            let stateBadge = '';
+            if (s.sessionState === 'LOGIN_DETECTED') {
+              stateBadge = '<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; font-weight: 700;"><i class="fa-solid fa-circle-check"></i> LOGIN_DETECTED (Sesi Aktif & Valid)</span>';
+            } else if (s.sessionState === 'LOGOUT_DETECTED') {
+              stateBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; font-weight: 700;"><i class="fa-solid fa-circle-xmark"></i> LOGOUT_DETECTED (Tidak Ada Sesi)</span>';
+            } else if (s.sessionState === 'SITE_UNAVAILABLE') {
+              stateBadge = '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b;"><i class="fa-solid fa-triangle-exclamation"></i> SITE_UNAVAILABLE</span>';
+            } else {
+              stateBadge = '<span class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8; border: 1px solid #94a3b8;"><i class="fa-solid fa-circle-question"></i> SESSION_UNKNOWN</span>';
+            }
+
+            const checkedTime = formatRelativeTime(s.checkedAt);
+
+            sessionsHtml += 
+              '<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 14px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">' +
+                '<div style="display: flex; align-items: center; gap: 10px;">' +
+                  '<span style="font-weight: 700; color: white; display: flex; align-items: center; gap: 6px;">' +
+                    '<i class="fa-brands fa-youtube" style="color: #ef4444; font-size: 16px;"></i> ' + escapeHtml(s.domain) +
+                  '</span>' +
+                  stateBadge +
+                '</div>' +
+                '<div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">' +
+                  'Pemeriksaan: ' + checkedTime +
+                '</div>' +
+              '</div>';
+          }
+        } else {
+          sessionsHtml = '<div style="font-size: 12px; color: var(--text-muted); font-style: italic;">Menunggu data status sesi pertama dari perangkat...</div>';
+        }
+
+        html += 
+          '<div style="background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;">' +
+            '<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">' +
+              '<div style="display: flex; align-items: center; gap: 10px;">' +
+                '<span style="font-size: 15px; font-weight: 800; color: white;">🖥️ ' + escapeHtml(d.deviceName) + '</span>' +
+                '<span class="code-chip" style="font-size: 10px;">' + escapeHtml(d.deviceUuid) + '</span>' +
+                '<span class="badge badge-plain" style="font-size: 10px;">Pairing: ' + escapeHtml(d.pairingCode) + '</span>' +
+                onlineBadge +
+              '</div>' +
+              '<div style="display: flex; align-items: center; gap: 10px;">' +
+                '<span style="font-size: 11px; color: var(--text-muted);">Heartbeat: <strong>' + lastSeenText + '</strong></span>' +
+                '<button class="btn btn-secondary btn-xs" style="color: #ef4444;" onclick="unpairDeviceAction(\\\'' + escapeJs(d.deviceUuid) + '\\\')">Unpair</button>' +
+              '</div>' +
+            '</div>' +
+            '<div style="display: flex; flex-direction: column; gap: 6px;">' +
+              sessionsHtml +
+            '</div>' +
+          '</div>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    async function unpairDeviceAction(uuid) {
+      if (!confirm('Putus sambungan (unpair) perangkat ini?')) return;
+      try {
+        await fetch('/api/extension/unpair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceUuid: uuid })
+        });
+        showToast('Perangkat berhasil di-unpair', 'success');
+        fetchSessionMonitorData(false);
+      } catch (err) {
+        showToast('Gagal unpair: ' + err.message, 'error');
+      }
+    }
+
     // --- EVENT LISTENERS & INITIALIZATION ---
     document.addEventListener('DOMContentLoaded', function() {
       const pcSearch = document.getElementById('pc-search-input');
@@ -2652,13 +2802,19 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       }
     });
 
-    // Auto-refresh every 5 seconds (non-disruptive background polling)
+    // Auto-refresh session monitor every 1 second (realtime 1s heartbeat)
+    setInterval(function() {
+      fetchSessionMonitorData(true);
+    }, 1000);
+
+    // Auto-refresh cookies table every 5 seconds (non-disruptive background polling)
     setInterval(function() {
       fetchData(true);
     }, 5000);
 
     // Initial load
     fetchData(false);
+    fetchSessionMonitorData(false);
   </script>
 </body>
 </html>`;
@@ -2980,6 +3136,186 @@ const server = http.createServer(async (req, res) => {
         });
       } catch (err) {
         return sendJson(res, 400, { error: 'Invalid JSON payload: ' + err.message });
+      }
+    });
+    return;
+  }
+
+  // --- REALTIME BROWSER SESSION MONITOR API ---
+
+  // 1. Device Pairing (POST /api/extension/pair)
+  if (req.method === 'POST' && normPath === '/api/extension/pair') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { deviceUuid, deviceName, pairingCode, version } = JSON.parse(body || '{}');
+        if (!deviceUuid || !deviceName) {
+          return sendJson(res, 400, { status: 'error', error: 'deviceUuid and deviceName are required' });
+        }
+
+        const safeCode = pairingCode || Math.random().toString(36).substring(2, 8).toUpperCase();
+        let device = null;
+        if (db) {
+          device = await db.pairDevice(deviceUuid, deviceName, safeCode, version || '1.0.0');
+        } else {
+          device = { deviceUuid, deviceName, pairingCode: safeCode, pairingStatus: 'paired' };
+        }
+
+        return sendJson(res, 200, {
+          status: 'success',
+          message: 'Device successfully paired',
+          device
+        });
+      } catch (err) {
+        return sendJson(res, 400, { status: 'error', error: 'Invalid JSON: ' + err.message });
+      }
+    });
+    return;
+  }
+
+  // 2. Realtime Heartbeat 1s (POST /api/extension/heartbeat)
+  if (req.method === 'POST' && normPath === '/api/extension/heartbeat') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        let deviceUuid = req.headers['x-device-uuid'];
+        if (!deviceUuid && body) {
+          try {
+            const parsed = JSON.parse(body);
+            deviceUuid = parsed.deviceUuid;
+          } catch (_) {}
+        }
+
+        if (!deviceUuid) {
+          return sendJson(res, 400, { status: 'error', error: 'deviceUuid is required' });
+        }
+
+        if (db) {
+          await db.updateHeartbeat(deviceUuid);
+        }
+
+        return sendJson(res, 200, {
+          status: 'ok',
+          online: true,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        return sendJson(res, 400, { status: 'error', error: err.message });
+      }
+    });
+    return;
+  }
+
+  // 3. Realtime Session Status Update (POST /api/extension/session-status)
+  if (req.method === 'POST' && normPath === '/api/extension/session-status') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const { deviceUuid, domain, sessionState, checkedAt } = payload;
+
+        // Security Guardrail: Reject if payload contains sensitive cookie values or tokens
+        if (payload.cookies || payload.cookie || payload.tokens || payload.token || payload.password || payload.value) {
+          return sendJson(res, 400, {
+            status: 'error',
+            error: 'Security Violation: Cookie values and authentication tokens are strictly forbidden'
+          });
+        }
+
+        if (!deviceUuid || !domain || !sessionState) {
+          return sendJson(res, 400, { status: 'error', error: 'deviceUuid, domain, and sessionState are required' });
+        }
+
+        const validStates = ['LOGIN_DETECTED', 'LOGOUT_DETECTED', 'SESSION_UNKNOWN', 'SITE_UNAVAILABLE'];
+        const state = validStates.includes(sessionState) ? sessionState : 'SESSION_UNKNOWN';
+
+        if (db) {
+          const result = await db.updateSessionStatus(deviceUuid, domain, state, checkedAt);
+          if (!result.success) {
+            return sendJson(res, 404, { status: 'error', error: result.error });
+          }
+        }
+
+        return sendJson(res, 200, {
+          status: 'success',
+          domain,
+          sessionState: state,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        return sendJson(res, 400, { status: 'error', error: 'Invalid JSON: ' + err.message });
+      }
+    });
+    return;
+  }
+
+  // 4. Admin Devices & Session Monitor (GET /api/admin/devices)
+  if (isGetOrHead && normPath === '/api/admin/devices') {
+    const user = getSessionUser(req);
+    if (!user) {
+      return sendJson(res, 401, { status: 'error', error: 'Unauthorized: Admin login required' }, isHead);
+    }
+
+    if (db) {
+      const devices = await db.getAdminDevices();
+      return sendJson(res, 200, {
+        status: 'success',
+        devices,
+        serverTime: new Date().toISOString()
+      }, isHead);
+    }
+
+    return sendJson(res, 200, { status: 'success', devices: [], serverTime: new Date().toISOString() }, isHead);
+  }
+
+  // 5. Admin Session Status (GET /api/admin/session-status)
+  if (isGetOrHead && normPath === '/api/admin/session-status') {
+    const user = getSessionUser(req);
+    if (!user) {
+      return sendJson(res, 401, { status: 'error', error: 'Unauthorized: Admin login required' }, isHead);
+    }
+
+    if (db) {
+      const devices = await db.getAdminDevices();
+      const allSessions = [];
+      for (const d of devices) {
+        for (const s of d.sessions) {
+          allSessions.push({
+            deviceName: d.deviceName,
+            deviceUuid: d.deviceUuid,
+            isOnline: d.isOnline,
+            lastSeenAt: d.lastSeenAt,
+            ...s
+          });
+        }
+      }
+      return sendJson(res, 200, { status: 'success', sessions: allSessions }, isHead);
+    }
+
+    return sendJson(res, 200, { status: 'success', sessions: [] }, isHead);
+  }
+
+  // 6. Device Unpair (POST /api/extension/unpair)
+  if (req.method === 'POST' && normPath === '/api/extension/unpair') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { deviceUuid } = JSON.parse(body || '{}');
+        if (!deviceUuid) {
+          return sendJson(res, 400, { status: 'error', error: 'deviceUuid is required' });
+        }
+
+        if (db) {
+          await db.unpairDevice(deviceUuid);
+        }
+
+        return sendJson(res, 200, { status: 'success', message: 'Device unpaired successfully' });
+      } catch (err) {
+        return sendJson(res, 400, { status: 'error', error: err.message });
       }
     });
     return;
