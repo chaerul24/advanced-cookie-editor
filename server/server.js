@@ -1164,6 +1164,143 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
     .flag-http { background: var(--purple-bg); color: var(--purple); }
     .flag-same { background: rgba(59, 130, 246, 0.12); color: #60a5fa; }
 
+    /* Domain Cards & Accordion Dropdown Styles */
+    .domain-cards-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+    }
+    .domain-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .domain-card:hover {
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+    .domain-card.is-expanded {
+      border-color: var(--accent);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .domain-card-header {
+      padding: 14px 18px;
+      background: rgba(18, 21, 29, 0.85);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .domain-card-header:hover {
+      background: rgba(28, 34, 48, 0.95);
+    }
+    .domain-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+    .domain-expand-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      transition: transform 0.2s ease, background 0.2s, color 0.2s;
+      flex-shrink: 0;
+    }
+    .domain-card:hover .domain-expand-icon {
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+    }
+    .domain-card.is-expanded .domain-expand-icon {
+      transform: rotate(90deg);
+      background: var(--accent);
+      color: white;
+    }
+    .domain-icon-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .domain-favicon {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+    }
+    .domain-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+    .domain-title-text {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .domain-sub-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .badge-domain-count {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .badge-pc-meta {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-size: 11px;
+    }
+    .domain-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .domain-card-body {
+      display: none;
+      border-top: 1px solid var(--border);
+      background: rgba(10, 12, 16, 0.45);
+    }
+    .domain-card.is-expanded .domain-card-body {
+      display: block;
+    }
+    .domain-card-body .table-wrapper {
+      max-height: 480px;
+    }
+    .view-mode-toggle .btn.active {
+      background: var(--accent) !important;
+      color: white !important;
+    }
+
     /* Empty state */
     .empty-state {
       padding: 60px 20px;
@@ -1442,24 +1579,55 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       <div class="cookies-table-card">
         <div class="table-toolbar">
           <input type="text" id="cookie-search-input" class="search-input table-search" placeholder="🔍 Cari nama cookie, value, path, domain..." oninput="onSearchInput()">
-          <div class="table-filter-group">
-            <button class="btn btn-secondary btn-sm active" id="filter-all" onclick="setSecurityFilter('all')">Semua</button>
-            <button class="btn btn-secondary btn-sm" id="filter-plain" onclick="setSecurityFilter('plain')"><i class="fa-solid fa-lock-open"></i> Tanpa Password</button>
-            <button class="btn btn-secondary btn-sm" id="filter-encrypted" onclick="setSecurityFilter('encrypted')"><i class="fa-solid fa-lock"></i> Terenkripsi</button>
-            <div style="display: flex; align-items: center; gap: 6px; margin-left: 8px;">
+          <div class="table-filter-group" style="align-items: center; flex-wrap: wrap;">
+            <!-- View Mode Switcher -->
+            <div class="view-mode-toggle" style="display: flex; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; padding: 2px;">
+              <button class="btn btn-xs active" id="btn-view-cards" onclick="setViewMode('cards')" style="border-radius: 6px; padding: 5px 10px;" title="Tampilan Kartu Per Domain">
+                <i class="fa-solid fa-layer-group"></i> Kartu Domain
+              </button>
+              <button class="btn btn-xs" id="btn-view-table" onclick="setViewMode('table')" style="border-radius: 6px; padding: 5px 10px;" title="Tampilan Tabel Rata">
+                <i class="fa-solid fa-table-list"></i> Tabel Rata
+              </button>
+            </div>
+
+            <!-- Expand / Collapse All (Cards view) -->
+            <div id="cards-expand-controls" style="display: flex; gap: 4px;">
+              <button class="btn btn-secondary btn-xs" onclick="expandAllDomainCards()" title="Buka Semua Dropdown Domain">
+                <i class="fa-solid fa-angles-down"></i> Buka Semua
+              </button>
+              <button class="btn btn-secondary btn-xs" onclick="collapseAllDomainCards()" title="Tutup Semua Dropdown Domain">
+                <i class="fa-solid fa-angles-up"></i> Tutup Semua
+              </button>
+            </div>
+
+            <!-- Security Filter Buttons -->
+            <div style="display: flex; gap: 4px;">
+              <button class="btn btn-secondary btn-sm active" id="filter-all" onclick="setSecurityFilter('all')">Semua</button>
+              <button class="btn btn-secondary btn-sm" id="filter-plain" onclick="setSecurityFilter('plain')"><i class="fa-solid fa-lock-open"></i> Polos</button>
+              <button class="btn btn-secondary btn-sm" id="filter-encrypted" onclick="setSecurityFilter('encrypted')"><i class="fa-solid fa-lock"></i> Terenkripsi</button>
+            </div>
+
+            <!-- Page Size -->
+            <div style="display: flex; align-items: center; gap: 6px; margin-left: 4px;">
               <span style="font-size: 12px; color: var(--text-muted);">Tampilkan:</span>
               <select id="page-size-select" class="search-input" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="changePageSize(this.value)">
-                <option value="25">25</option>
-                <option value="50" selected>50</option>
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
                 <option value="100">100</option>
-                <option value="250">250</option>
                 <option value="all">Semua</option>
               </select>
             </div>
           </div>
         </div>
 
-        <div class="table-wrapper">
+        <!-- 1. Domain Cards View (Per Domain with Dropdown Cookies) -->
+        <div id="domain-cards-container" class="domain-cards-list">
+          <!-- Injected via JS -->
+        </div>
+
+        <!-- 2. Flat Table View (Optional full list) -->
+        <div class="table-wrapper" id="flat-table-container" style="display: none;">
           <table>
             <thead>
               <tr>
@@ -1476,16 +1644,18 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
               <!-- Injected via JS -->
             </tbody>
           </table>
-          <div class="empty-state" id="empty-state" style="display: none;">
-            <div class="empty-icon"><i class="fa-solid fa-cookie"></i></div>
-            <p>Tidak ada cookie yang cocok dengan filter atau pencarian.</p>
-          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="empty-state" style="display: none;">
+          <div class="empty-icon"><i class="fa-solid fa-cookie"></i></div>
+          <p>Tidak ada cookie yang cocok dengan filter atau pencarian.</p>
         </div>
 
         <!-- Table Pagination Footer -->
         <div class="table-pagination" style="padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; gap: 10px;">
           <div>
-            Menampilkan <span id="page-range" style="font-weight: 700; color: white;">0 - 0</span> dari <span id="page-total" style="font-weight: 700; color: var(--accent);">0</span> cookie
+            Menampilkan <span id="page-range" style="font-weight: 700; color: white;">0 - 0</span> dari <span id="page-total" style="font-weight: 700; color: var(--accent);">0</span> <span id="page-unit">domain</span>
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <button class="btn btn-secondary btn-sm" id="btn-prev-page" onclick="prevPage()">
@@ -1772,6 +1942,8 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
     let pageSize = 25;
     let currentPage = 1;
     let isFetching = false;
+    let currentViewMode = 'cards';
+    let expandedDomains = new Set();
 
     // --- TOAST NOTIFICATIONS ---
     function showToast(message, type) {
@@ -2110,6 +2282,77 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       renderTable();
     }
 
+    function setViewMode(mode) {
+      currentViewMode = mode;
+      const btnCards = document.getElementById('btn-view-cards');
+      const btnTable = document.getElementById('btn-view-table');
+      const expandControls = document.getElementById('cards-expand-controls');
+      const cardsContainer = document.getElementById('domain-cards-container');
+      const flatContainer = document.getElementById('flat-table-container');
+
+      if (btnCards) btnCards.className = 'btn btn-xs ' + (mode === 'cards' ? 'active' : '');
+      if (btnTable) btnTable.className = 'btn btn-xs ' + (mode === 'table' ? 'active' : '');
+      if (expandControls) expandControls.style.display = mode === 'cards' ? 'flex' : 'none';
+      if (cardsContainer) cardsContainer.style.display = mode === 'cards' ? 'flex' : 'none';
+      if (flatContainer) flatContainer.style.display = mode === 'table' ? 'block' : 'none';
+
+      currentPage = 1;
+      renderTable();
+    }
+
+    function expandAllDomainCards() {
+      const records = getFilteredRecords();
+      const domainGroups = getMatchingCookiesByDomain(records);
+      for (const g of domainGroups) {
+        expandedDomains.add(g.domain);
+      }
+      document.querySelectorAll('.domain-card').forEach(function(card) {
+        card.classList.add('is-expanded');
+      });
+    }
+
+    function collapseAllDomainCards() {
+      expandedDomains.clear();
+      document.querySelectorAll('.domain-card').forEach(function(card) {
+        card.classList.remove('is-expanded');
+      });
+    }
+
+    function toggleDomainCard(domainName) {
+      if (expandedDomains.has(domainName)) {
+        expandedDomains.delete(domainName);
+      } else {
+        expandedDomains.add(domainName);
+      }
+      const cards = document.querySelectorAll('.domain-card');
+      cards.forEach(function(c) {
+        if (c.getAttribute('data-domain') === domainName) {
+          c.classList.toggle('is-expanded', expandedDomains.has(domainName));
+        }
+      });
+    }
+
+    async function deleteDomainCookiesAction(domainName, count) {
+      if (!confirm('Apakah Anda yakin ingin menghapus seluruh cookie untuk domain "' + domainName + '" (' + count + ' cookie)?')) {
+        return;
+      }
+      try {
+        const res = await fetch('/api/cookies/domain?domain=' + encodeURIComponent(domainName), {
+          method: 'DELETE'
+        });
+        const json = await res.json();
+        if (json.status === 'success') {
+          showToast('Berhasil menghapus cookie domain ' + domainName, 'success');
+          expandedDomains.delete(domainName);
+          fetchData(false);
+        } else {
+          showToast('Gagal menghapus domain: ' + (json.error || 'Terjadi kesalahan'), 'error');
+        }
+      } catch (err) {
+        showToast('Koneksi gagal: ' + err.message, 'error');
+      }
+    }
+
     function prevPage() {
       if (currentPage > 1) {
         currentPage--;
@@ -2119,8 +2362,14 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
 
     function nextPage() {
       const records = getFilteredRecords();
-      const matchingCookies = getMatchingCookiesList(records);
-      const totalPages = pageSize === 'all' ? 1 : Math.ceil(matchingCookies.length / pageSize);
+      let totalPages = 1;
+      if (currentViewMode === 'cards') {
+        const domainGroups = getMatchingCookiesByDomain(records);
+        totalPages = pageSize === 'all' ? 1 : Math.ceil(domainGroups.length / pageSize);
+      } else {
+        const matchingCookies = getMatchingCookiesList(records);
+        totalPages = pageSize === 'all' ? 1 : Math.ceil(matchingCookies.length / pageSize);
+      }
       if (currentPage < totalPages) {
         currentPage++;
         renderTable();
@@ -2161,8 +2410,292 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
       return list;
     }
 
+    function getMatchingCookiesByDomain(records) {
+      const list = getMatchingCookiesList(records);
+      const map = new Map();
+
+      for (const item of list) {
+        const dom = cleanDomain(item.cookie.domain) || 'Unknown';
+        if (!map.has(dom)) {
+          map.set(dom, {
+            domain: dom,
+            pcs: new Set(),
+            hasEncrypted: false,
+            hasPlain: false,
+            items: []
+          });
+        }
+        const grp = map.get(dom);
+        if (item.pcName) grp.pcs.add(item.pcName);
+        if (item.isEncrypted) grp.hasEncrypted = true;
+        else grp.hasPlain = true;
+        grp.items.push(item);
+      }
+
+      return Array.from(map.values()).sort(function(a, b) {
+        return b.items.length - a.items.length || a.domain.localeCompare(b.domain);
+      });
+    }
+
     function renderTable() {
       const records = getFilteredRecords();
+      const pageUnitEl = document.getElementById('page-unit');
+      const cardsContainer = document.getElementById('domain-cards-container');
+      const flatContainer = document.getElementById('flat-table-container');
+
+      if (currentViewMode === 'cards') {
+        if (cardsContainer) cardsContainer.style.display = 'flex';
+        if (flatContainer) flatContainer.style.display = 'none';
+        if (pageUnitEl) pageUnitEl.textContent = 'domain';
+        renderDomainCards(records);
+      } else {
+        if (cardsContainer) cardsContainer.style.display = 'none';
+        if (flatContainer) flatContainer.style.display = 'block';
+        if (pageUnitEl) pageUnitEl.textContent = 'cookie';
+        renderFlatTable(records);
+      }
+    }
+
+    function renderDomainCards(records) {
+      const container = document.getElementById('domain-cards-container');
+      const emptyState = document.getElementById('empty-state');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const domainGroups = getMatchingCookiesByDomain(records);
+      const totalCount = domainGroups.length;
+
+      // Update Pagination for Domains
+      const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalCount / pageSize));
+      if (currentPage > totalPages) currentPage = totalPages;
+
+      let startIndex = 0;
+      let endIndex = totalCount;
+      if (pageSize !== 'all') {
+        startIndex = (currentPage - 1) * pageSize;
+        endIndex = Math.min(startIndex + pageSize, totalCount);
+      }
+
+      const pageRangeEl = document.getElementById('page-range');
+      const pageTotalEl = document.getElementById('page-total');
+      const pageIndicatorEl = document.getElementById('page-indicator');
+      const btnPrev = document.getElementById('btn-prev-page');
+      const btnNext = document.getElementById('btn-next-page');
+
+      if (pageRangeEl) pageRangeEl.textContent = totalCount === 0 ? '0' : ((startIndex + 1) + '-' + endIndex);
+      if (pageTotalEl) pageTotalEl.textContent = totalCount;
+      if (pageIndicatorEl) pageIndicatorEl.textContent = 'Halaman ' + currentPage + ' / ' + totalPages;
+      if (btnPrev) btnPrev.disabled = currentPage <= 1;
+      if (btnNext) btnNext.disabled = currentPage >= totalPages;
+
+      if (totalCount === 0) {
+        if (emptyState) emptyState.style.display = 'flex';
+        return;
+      }
+      if (emptyState) emptyState.style.display = 'none';
+
+      const pageGroups = domainGroups.slice(startIndex, endIndex);
+      const searchVal = (document.getElementById('cookie-search-input').value || '').trim();
+
+      for (const grp of pageGroups) {
+        const dom = grp.domain;
+        const isSearchExpanded = searchVal.length > 0;
+        const isExpanded = isSearchExpanded || expandedDomains.has(dom);
+
+        const card = document.createElement('div');
+        card.className = 'domain-card ' + (isExpanded ? 'is-expanded' : '');
+        card.setAttribute('data-domain', dom);
+
+        const pcList = Array.from(grp.pcs).join(', ') || 'Semua PC';
+        const faviconUrl = 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(dom) + '&sz=32';
+
+        const securityBadge = grp.hasEncrypted && !grp.hasPlain
+          ? '<span class="badge badge-encrypted"><i class="fa-solid fa-lock"></i> Terenkripsi</span>'
+          : (!grp.hasEncrypted && grp.hasPlain
+            ? '<span class="badge badge-plain"><i class="fa-solid fa-lock-open"></i> Polos</span>'
+            : '<span class="badge badge-plain">Campuran</span>');
+
+        // Header HTML
+        const header = document.createElement('div');
+        header.className = 'domain-card-header';
+        header.innerHTML = 
+          '<div class="domain-header-left">' +
+            '<div class="domain-expand-icon">' +
+              '<i class="fa-solid fa-chevron-right domain-chevron"></i>' +
+            '</div>' +
+            '<div class="domain-icon-circle">' +
+              '<img src="' + faviconUrl + '" class="domain-favicon">' +
+              '<i class="fa-solid fa-globe domain-fallback-icon" style="display: none; color: var(--accent);"></i>' +
+            '</div>' +
+            '<div class="domain-title-group">' +
+              '<div class="domain-title-text">' +
+                escapeHtml(dom) +
+              '</div>' +
+              '<div class="domain-sub-meta">' +
+                '<span class="badge badge-domain-count"><i class="fa-solid fa-cookie"></i> ' + grp.items.length + ' Cookie</span>' +
+                '<span class="badge badge-pc-meta"><i class="fa-solid fa-desktop"></i> ' + escapeHtml(pcList) + '</span>' +
+                securityBadge +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="domain-header-actions">' +
+            '<button class="btn btn-secondary btn-xs btn-copy-domain-all" title="Salin semua cookie domain ini (Format name=value)"><i class="fa-solid fa-copy"></i> Salin Semua</button>' +
+            '<button class="btn btn-secondary btn-xs btn-export-domain-item" title="Export domain ini"><i class="fa-solid fa-download"></i> Export</button>' +
+            '<button class="btn btn-danger btn-xs btn-delete-domain-item" title="Hapus semua cookie domain ini"><i class="fa-solid fa-trash"></i></button>' +
+          '</div>';
+
+        const favImg = header.querySelector('.domain-favicon');
+        const fallbackIcon = header.querySelector('.domain-fallback-icon');
+        if (favImg && fallbackIcon) {
+          favImg.onerror = function() {
+            favImg.style.display = 'none';
+            fallbackIcon.style.display = 'inline-block';
+          };
+        }
+
+        // Toggle on header click (except action buttons)
+        header.onclick = (function(d) {
+          return function(e) {
+            if (e.target.closest('.domain-header-actions')) return;
+            toggleDomainCard(d);
+          };
+        })(dom);
+
+        // Header Action: Copy Domain
+        const btnCopyDomain = header.querySelector('.btn-copy-domain-all');
+        if (btnCopyDomain) {
+          btnCopyDomain.onclick = (function(items) {
+            return function(e) {
+              e.stopPropagation();
+              const pairs = items.map(function(it) {
+                return (it.cookie.name || '') + '=' + (it.cookie.value || '');
+              }).join('; ');
+              copyText(pairs);
+            };
+          })(grp.items);
+        }
+
+        // Header Action: Export Domain
+        const btnExportDomain = header.querySelector('.btn-export-domain-item');
+        if (btnExportDomain) {
+          btnExportDomain.onclick = (function(d) {
+            return function(e) {
+              e.stopPropagation();
+              const exportDomSelect = document.getElementById('export-domain');
+              if (exportDomSelect) exportDomSelect.value = d;
+              openModal('modal-export-cookie');
+            };
+          })(dom);
+        }
+
+        // Header Action: Delete Domain
+        const btnDelDomain = header.querySelector('.btn-delete-domain-item');
+        if (btnDelDomain) {
+          btnDelDomain.onclick = (function(d, count) {
+            return function(e) {
+              e.stopPropagation();
+              deleteDomainCookiesAction(d, count);
+            };
+          })(dom, grp.items.length);
+        }
+
+        card.appendChild(header);
+
+        // Body with Inner Table
+        const body = document.createElement('div');
+        body.className = 'domain-card-body';
+
+        const tableWrapper = document.createElement('div');
+        tableWrapper.className = 'table-wrapper';
+
+        const table = document.createElement('table');
+        table.innerHTML = 
+          '<thead>' +
+            '<tr>' +
+              '<th>Nama Cookie & Path</th>' +
+              '<th>Isi / Nilai (Value)</th>' +
+              '<th>Keamanan</th>' +
+              '<th>Flags</th>' +
+              '<th>Kedaluwarsa</th>' +
+              '<th style="text-align: right;">Aksi</th>' +
+            '</tr>' +
+          '</thead>' +
+          '<tbody></tbody>';
+
+        const tbody = table.querySelector('tbody');
+
+        for (const item of grp.items) {
+          const c = item.cookie;
+          const tr = document.createElement('tr');
+          const cookieKey = item.recordId + '_' + c.name;
+          const isRevealed = Boolean(revealedValues[cookieKey]);
+          const displayVal = isRevealed ? (c.value || '') : '••••••••••••••••';
+
+          const pwdBadge = item.isEncrypted
+            ? '<span class="badge badge-encrypted">🔒 Ada Password</span>'
+            : '<span class="badge badge-plain">🔓 Tanpa Password</span>';
+
+          let expText = 'Session';
+          if (c.expirationDate) {
+            const expDate = new Date(c.expirationDate * 1000);
+            expText = expDate > new Date() ? expDate.toLocaleDateString() : '⚠️ Expired';
+          }
+
+          tr.innerHTML = 
+            '<td><div class="cookie-name">' + escapeHtml(c.name) + '</div><div style="font-size: 11px; color: var(--text-dim);">' + escapeHtml(c.path || '/') + '</div></td>' +
+            '<td>' +
+              '<div class="cookie-val-box">' +
+                '<span class="val-text" id="val-' + cookieKey + '">' + escapeHtml(displayVal) + '</span>' +
+                '<div style="display: flex; gap: 4px;">' +
+                  '<button class="copy-icon-btn btn-toggle-val" title="Toggle Show">👁️</button>' +
+                  '<button class="copy-icon-btn btn-copy-val" title="Copy Value">📋</button>' +
+                '</div>' +
+              '</div>' +
+            '</td>' +
+            '<td>' + pwdBadge + '</td>' +
+            '<td>' +
+              '<div class="flag-pills">' +
+                (c.secure ? '<span class="flag flag-sec">Secure</span>' : '') +
+                (c.httpOnly ? '<span class="flag flag-http">HttpOnly</span>' : '') +
+                (c.sameSite ? '<span class="flag flag-same">' + escapeHtml(c.sameSite) + '</span>' : '') +
+              '</div>' +
+            '</td>' +
+            '<td style="font-size: 11px; color: var(--text-muted); font-family: monospace;">' + expText + '</td>' +
+            '<td style="text-align: right; white-space: nowrap;">' +
+              '<div style="display: inline-flex; gap: 6px;">' +
+                '<button class="btn btn-secondary btn-sm btn-copy-pair" title="Copy Pair"><i class="fa-solid fa-copy"></i></button>' +
+                '<button class="btn btn-secondary btn-sm btn-edit-cookie" title="Edit Cookie"><i class="fa-solid fa-pen"></i></button>' +
+                '<button class="btn btn-danger btn-sm btn-del-cookie" title="Hapus Cookie"><i class="fa-solid fa-trash"></i></button>' +
+              '</div>' +
+            '</td>';
+
+          const btnToggle = tr.querySelector('.btn-toggle-val');
+          if (btnToggle) btnToggle.onclick = (function(k, v) { return function() { toggleReveal(k, v); }; })(cookieKey, c.value || '');
+
+          const btnCopyVal = tr.querySelector('.btn-copy-val');
+          if (btnCopyVal) btnCopyVal.onclick = (function(v) { return function() { copyText(v); }; })(c.value || '');
+
+          const btnCopyPair = tr.querySelector('.btn-copy-pair');
+          if (btnCopyPair) btnCopyPair.onclick = (function(pair) { return function() { copyText(pair); }; })((c.name || '') + '=' + (c.value || ''));
+
+          const btnEdit = tr.querySelector('.btn-edit-cookie');
+          if (btnEdit) btnEdit.onclick = (function(pc, cookieObj) { return function() { openEditCookieModal(pc, cookieObj); }; })(item.pcName, c);
+
+          const btnDel = tr.querySelector('.btn-del-cookie');
+          if (btnDel) btnDel.onclick = (function(pc, name, d, p) { return function() { deleteCookieItem(pc, name, d, p); }; })(item.pcName, c.name, c.domain, c.path || '/');
+
+          tbody.appendChild(tr);
+        }
+
+        tableWrapper.appendChild(table);
+        body.appendChild(tableWrapper);
+        card.appendChild(body);
+
+        container.appendChild(card);
+      }
+    }
+
+    function renderFlatTable(records) {
       const tbody = document.getElementById('cookies-tbody');
       const emptyState = document.getElementById('empty-state');
       if (!tbody) return;
@@ -2218,9 +2751,6 @@ function getDashboardHtml(currentHost = 'erul.my.id', user = { displayName: 'Adm
           const expDate = new Date(c.expirationDate * 1000);
           expText = expDate > new Date() ? expDate.toLocaleDateString() : '⚠️ Expired';
         }
-
-        const safeCookieJson = escapeHtml(JSON.stringify(c));
-        const safePcName = escapeHtml(item.pcName);
 
         tr.innerHTML = 
           '<td><span class="brand-badge" style="color: white; border-color: rgba(255,255,255,0.15);">' + escapeHtml(cleanDomain(c.domain)) + '</span></td>' +
@@ -3430,6 +3960,44 @@ const server = http.createServer(async (req, res) => {
         }
 
         return sendJson(res, 200, { status: 'success', message: 'Cookie berhasil dihapus' });
+      } catch (err) {
+        return sendJson(res, 400, { status: 'error', error: err.message });
+      }
+    });
+    return;
+  }
+
+  // 11b. API: Delete Domain Cookies (DELETE /api/cookies/domain)
+  if (req.method === 'DELETE' && normPath === '/api/cookies/domain') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const parsedUrl = url.parse(req.url, true);
+        let domain = parsedUrl.query.domain;
+        let pcName = parsedUrl.query.pcName || 'all';
+
+        if (body) {
+          try {
+            const parsed = JSON.parse(body);
+            domain = parsed.domain || domain;
+            pcName = parsed.pcName || pcName;
+          } catch (_) {}
+        }
+
+        if (!domain) {
+          return sendJson(res, 400, { status: 'error', error: 'domain is required' });
+        }
+
+        if (db) {
+          const resDb = await db.deleteDomainCookies(domain, pcName);
+          if (!resDb.success) {
+            return sendJson(res, 500, { status: 'error', error: resDb.error });
+          }
+          return sendJson(res, 200, { status: 'success', message: 'Semua cookie domain ' + domain + ' berhasil dihapus (' + resDb.deleted + ' cookie)', deleted: resDb.deleted });
+        }
+
+        return sendJson(res, 200, { status: 'success', message: 'Domain cookies deleted' });
       } catch (err) {
         return sendJson(res, 400, { status: 'error', error: err.message });
       }

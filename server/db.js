@@ -416,6 +416,45 @@ async function deleteSingleCookie(pcName, cookieName, cookieDomain, cookiePath =
 }
 
 /**
+ * Delete all cookies belonging to a domain across all PCs or a specific PC
+ * @param {string} domain
+ * @param {string} [pcName]
+ */
+async function deleteDomainCookies(domain, pcName = 'all') {
+  const p = getPool();
+  const targetDomain = cleanDomain(domain);
+  if (!targetDomain) return { success: false, error: 'Domain tidak valid' };
+
+  let query = 'SELECT pc_name, client_ip, cookies_json, is_encrypted FROM client_cookie_snapshots';
+  const params = [];
+  if (pcName && pcName !== 'all') {
+    query += ' WHERE pc_name = ?';
+    params.push(pcName);
+  }
+
+  const [rows] = await p.query(query, params);
+  let totalDeleted = 0;
+
+  for (const row of rows) {
+    let cookies = [];
+    try {
+      cookies = JSON.parse(row.cookies_json || '[]');
+    } catch (_) {
+      cookies = [];
+    }
+    const initialLen = cookies.length;
+    cookies = cookies.filter(c => cleanDomain(c.domain) !== targetDomain);
+    const delCount = initialLen - cookies.length;
+    if (delCount > 0) {
+      totalDeleted += delCount;
+      await saveCookiesToDb(row.pc_name, row.client_ip || '127.0.0.1', cookies, row.is_encrypted || 0, 'all');
+    }
+  }
+
+  return { success: true, deleted: totalDeleted };
+}
+
+/**
  * Bulk import cookies for a PC
  * @param {string} pcName
  * @param {Array<object>} newCookiesList
@@ -692,6 +731,7 @@ module.exports = {
   authenticateUser,
   saveOrUpdateSingleCookie,
   deleteSingleCookie,
+  deleteDomainCookies,
   importCookiesToDb,
   pairDevice,
   updateHeartbeat,
