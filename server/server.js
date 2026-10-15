@@ -2774,10 +2774,13 @@ const server = http.createServer(async (req, res) => {
         let authResult = { success: false, error: 'Database tidak aktif' };
         if (db) {
           authResult = await db.authenticateUser(username, password);
-        } else if ((username === 'admin' || username === 'operator') && (password === 'chaerul!26' || password === 'admin' || password === 'admin123')) {
+        } else if (
+          (username && username.toLowerCase() === 'chaerul' && (password === 'wanatawang' || password === 'chaerul!26')) ||
+          ((username === 'admin' || username === 'operator') && (password === 'wanatawang' || password === 'chaerul!26' || password === 'admin' || password === 'admin123'))
+        ) {
           authResult = {
             success: true,
-            user: { username, displayName: 'Administrator', role: 'super_admin' }
+            user: { username, displayName: username.toLowerCase() === 'chaerul' ? 'Chaerul' : 'Administrator', role: 'super_admin' }
           };
         }
 
